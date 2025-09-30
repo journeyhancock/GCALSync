@@ -1,0 +1,20 @@
+{
+    "calendar_sync" :
+    {
+        "journey" :
+        {
+           "sync_from" : ["classes", "clubs", "career"],
+            "sync_to" : "journey!!" 
+        },
+        "mollee" :
+        {
+            "sync_from" : ["ca", "wclax '25-'26", "wclax '25-'26 eboard"],
+            "sync_to" : "mollee :)"
+        }
+        
+    },
+    "tasks_sync" :
+    {
+
+    }
+}
