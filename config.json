@@ -9,7 +9,7 @@
         "mollee" :
         {
             "sync_from" : ["ca", "wclax '25-'26", "wclax '25-'26 eboard"],
-            "sync_to" : "mollee :)"
+            "sync_to" : "moo test"
         }
         
     },

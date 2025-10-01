@@ -22,23 +22,23 @@ def main():
     with open("config.json", "r") as json_config:
         config = json.load(json_config)
     
-    calendar_config = config["calendar_sync"]["journey"]
-    creds = auth.authenticate("journey") # Authenticate connection to Google API
-    service = build("calendar", "v3", credentials=creds) # Start calendar service 
-    task_service = build("tasks", "v1", credentials=creds) # Start calendar service
-    sync_from, sync_to = sync_util.get_cal_ids(service=service, name="journey") # Run setup for cal sync
-    CalendarSyncJourney = calendar_sync.CalendarSync("journey", service=service, task_service=task_service, sync_from=sync_from, sync_to=sync_to) # CalendarSync object
-    #CalendarSyncJourney.sync_all() # Confirm database, sync_from, and sync_to are synced
-    CalendarSyncJourney.sync_tasks() # Confirm database, tasks, and sync_to TODOs are synced
+    # calendar_config = config["calendar_sync"]["journey"]
+    # creds = auth.authenticate("journey") # Authenticate connection to Google API
+    # service = build("calendar", "v3", credentials=creds) # Start calendar service 
+    # task_service = build("tasks", "v1", credentials=creds) # Start calendar service
+    # sync_from, sync_to = sync_util.get_cal_ids(service=service, name="journey") # Run setup for cal sync
+    # CalendarSyncJourney = calendar_sync.CalendarSync("journey", service=service, task_service=task_service, sync_from=sync_from, sync_to=sync_to) # CalendarSync object
+    # CalendarSyncJourney.sync_all() # Confirm database, sync_from, and sync_to are synced
+    # CalendarSyncJourney.sync_tasks() # Confirm database, tasks, and sync_to TODOs are synced
     
     print("-----------------------")
 
-    # calendar_config = config["calendar_sync"]["mollee"]
-    # creds = auth.authenticate("mollee") # Authenticate connection to Google API
-    # service = build("calendar", "v3", credentials=creds) # Start calendar service 
-    # sync_from, sync_to = sync_util.get_cal_ids(service=service, name="mollee") # Run setup for cal sync
-    # CalendarSyncMollee = calendar_sync.CalendarSync("mollee", service=service, task_service=None, sync_from=sync_from, sync_to=sync_to) # CalendarSync object
-    # CalendarSyncMollee.sync_all() # Confirm database, sync_from, and sync_to are synced
+    calendar_config = config["calendar_sync"]["mollee"]
+    creds = auth.authenticate("mollee") # Authenticate connection to Google API
+    service = build("calendar", "v3", credentials=creds) # Start calendar service 
+    sync_from, sync_to = sync_util.get_cal_ids(service=service, name="mollee") # Run setup for cal sync
+    CalendarSyncMollee = calendar_sync.CalendarSync("mollee", service=service, task_service=None, sync_from=sync_from, sync_to=sync_to) # CalendarSync object
+    CalendarSyncMollee.sync_all() # Confirm database, sync_from, and sync_to are synced
 
 if __name__ == "__main__":
     main()
