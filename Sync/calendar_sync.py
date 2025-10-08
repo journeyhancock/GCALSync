@@ -13,6 +13,37 @@ class CalendarSync:
         self.sync_from = sync_from
         self.sync_to = sync_to
 
+    def clear_sync_to(self):
+        now = datetime.datetime.now(tz=ZoneInfo("America/Phoenix")).isoformat()
+        day = now[:11] + "00:00:00.000Z"
+
+        events_result = self.service.events().list(
+            calendarId=self.sync_to[1],
+            singleEvents=True,
+            timeMin=day
+        ).execute()
+
+        for event in events_result.get("items", []):
+            event_id = event["id"]
+
+            self.service.events().delete(
+                calendarId=self.sync_to[1],
+                eventId=event_id
+            ).execute()
+
+        session = get_session()
+        try:
+            if self.name == "journey":
+                session.query(JourneyEventMap).delete()
+                session.query(TasksDayEventMap).delete()
+
+                session.commit()
+            else:
+                session.query(MolleeEventMap).delete()
+                session.commit()
+        finally:
+            session.close()
+
     # Check database, tasks, and sync_to TODO events are synced
     def sync_tasks(self):
         now = datetime.datetime.now(tz=ZoneInfo("America/Phoenix")).isoformat()
@@ -58,9 +89,9 @@ class CalendarSync:
             formatted_task_list = []
             for task in task_list:
                 if task["status"] == "completed":
-                    formatted_task_list.append(f"<s>{task['title']}</s>")
+                    formatted_task_list.append(f"\u2705 {task['title']} ")
                 else:
-                    formatted_task_list.append(task["title"])
+                    formatted_task_list.append(f"\u274C {task["title"]}")
             new_task_list = "\n".join(formatted_task_list)
 
             if day in db_mapping:
@@ -82,7 +113,7 @@ class CalendarSync:
                 new_event = {
                     "summary" : "TODO",
                     "start" : {"dateTime" : day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
-                    "end" : {"dateTime" : day[:11] + "06:00:30.000", "timeZone" : "America/Phoenix"},
+                    "end" : {"dateTime" : day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
                     "description" : new_task_list 
                 }
 
