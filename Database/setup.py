@@ -30,6 +30,22 @@ class TasksDayEventMap(Base):
     last_synced = Column(TIMESTAMP, default=datetime.datetime.now(tz=datetime.timezone.utc))
     __table_args__ = (UniqueConstraint("day", "event_id"),)
 
+class TasksIdEventMap(Base):
+    __tablename__ = "tasks_id_event_map"
+    id = Column(Integer, primary_key=True)
+    task_id = Column(String, nullable=False)
+    event_id = Column(String, nullable=False)
+    last_synced = Column(TIMESTAMP, default=datetime.datetime.now(tz=datetime.timezone.utc))
+    __table_args__ = (UniqueConstraint("task_id", "event_id"),)
+
+class TasksIdNameMap(Base):
+    __tablename__ = "tasks_id_name_map"
+    id = Column(Integer, primary_key=True)
+    task_id = Column(String, nullable=False)
+    task_name = Column(String, nullable=False)
+    last_synced = Column(TIMESTAMP, default=datetime.datetime.now(tz=datetime.timezone.utc))
+    __table_args__ = (UniqueConstraint("task_id", "task_name"),)
+
 engine = create_engine("postgresql://gcalsync_user:user@localhost:5432/gcalsync")
 LocalSession = scoped_session(sessionmaker(bind=engine))
 

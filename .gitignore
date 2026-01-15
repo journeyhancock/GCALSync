@@ -1,6 +1,9 @@
 */__pycache__
 .venv/*
 Old/*
+Bad/*
+Sync/*
 credentials.json
 token_journey.json
 token_mollee.json
+tokens/*_creds.json

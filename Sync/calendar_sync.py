@@ -2,7 +2,7 @@ import datetime
 import json
 
 from collections import defaultdict
-from Database.setup import JourneyEventMap, MolleeEventMap, TasksDayEventMap, get_session
+from Database.setup import JourneyEventMap, MolleeEventMap, TasksDayEventMap, TasksIdNameMap, get_session
 from zoneinfo import ZoneInfo
 
 class CalendarSync:
@@ -109,6 +109,28 @@ class CalendarSync:
                         eventId=todo_event_id,
                         body={"description" : new_task_list}
                     ).execute()
+
+                session = get_session()
+                try:
+                    for task in task_list:
+                        task_id = task["id"]
+
+                        existing = session.query(TasksIdNameMap).filter_by(task_id=task_id).first()
+                        if existing:
+                            existing.task_name = task["title"]
+                            existing.last_synced = datetime.datetime.now(tz=datetime.timezone.utc) # type: ignore
+                        else:
+                            new_mapping = TasksIdNameMap(
+                                task_id=task_id,
+                                task_name=task["title"],
+                                last_synced=datetime.datetime.now(tz=datetime.timezone.utc)
+                            )
+                            session.add(new_mapping)
+
+                        session.commit()
+                finally:
+                    session.close()
+
             else:
                 new_event = {
                     "summary" : "TODO",
@@ -132,6 +154,19 @@ class CalendarSync:
                     )
                     session.add(mapping)
                     session.commit()
+                finally:
+                    session.close()
+
+                session = get_session()
+                try:
+                    for task in task_list:
+                        new_mapping = TasksIdNameMap(
+                            task_id=task["id"],
+                            task_name=task["title"],
+                            last_synced=datetime.datetime.now(tz=datetime.timezone.utc)
+                        )
+                        session.add(new_mapping)
+                        session.commit()
                 finally:
                     session.close()
 
@@ -162,13 +197,19 @@ class CalendarSync:
         # Get all events from sync_from calendars
         sync_from_events = {}
         for cal_name, cal_id in self.sync_from.items():
-            events_result = self.service.events().list(
-                calendarId=cal_id,
-                singleEvents=True,
-                timeMin=now
-            ).execute()
-            events = events_result.get("items", [])
-            for event in events: sync_from_events[event["id"]] = event
+            page_token = None
+            while True:
+                events_result = self.service.events().list(
+                    calendarId=cal_id,
+                    singleEvents=True,
+                    timeMin=now
+                ).execute()
+                events = events_result.get("items", [])
+                for event in events: sync_from_events[event["id"]] = event
+
+                page_token = events_result.get("nextPageToken")
+                if not page_token:
+                    break
 
         # Get all events from sync_to calendar
         sync_to_events = {}
@@ -280,3 +321,138 @@ class CalendarSync:
                             calendarId=self.sync_to[1],
                             eventId=sync_to_event_id
                         ).execute()
+
+    def poll_tasks(self):
+        now = datetime.datetime.now(tz=ZoneInfo("America/Phoenix")).isoformat()
+        day = now[:11] + "00:00:00.000Z"
+
+        tasks = defaultdict(list)
+        tasks_result = self.task_service.tasks().list(
+            tasklist="@default",
+            updatedMin=day
+            # updatedMin=datetime.datetime.now(tz=datetime.timezone.utc)isoformat()
+        ).execute()
+
+        count = 0
+        for task in tasks_result.get("items", []):
+            count += 1
+            due_time = task["due"]
+            tasks[due_time[:11] + "00:00:00.000Z"].append(task)
+        print("Found {} updated tasks".format(count))
+
+        todo_events = {}
+        events_result = self.service.events().list(
+            calendarId=self.sync_to[1],
+            singleEvents=True,
+            timeMin=day
+        ).execute()
+        for event in events_result.get("items", []):
+            if event["summary"] == "TODO": todo_events[event["id"]] = event
+
+        session = get_session()
+        try:
+            mappings = session.query(TasksDayEventMap)
+            db_mapping = {str(m.day) : str(m.event_id) for m in mappings}
+            mappings = session.query(TasksIdNameMap)
+            name_mapping = {str(m.task_id) : str(m.task_name) for m in mappings}
+        finally:
+            session.close()
+
+        print(name_mapping)
+
+        print(f"Found ")
+        for day, task_list in tasks.items():
+            curr_task_list = []
+            if day in db_mapping:
+                todo_event_id = db_mapping[day]
+
+                todo_event = self.service.events().get(
+                    calendarId=self.sync_to[1],
+                    eventId=todo_event_id
+                ).execute()
+
+                curr_task_list = todo_event["description"]
+                curr_task_list = curr_task_list.split("\n")
+                
+                for task in task_list:
+                    task_id = task["id"]
+                    if task_id in name_mapping:
+                        task_name = name_mapping[task_id]
+                        if task["status"] == "completed":
+                            curr_task_list.append(f"\u2705 {task['title']}")
+                        else:
+                            curr_task_list.append(f"\u274C {task["title"]}")
+                    
+                        for i, name in enumerate(curr_task_list):
+                            if task_name in name:
+                                del curr_task_list[i]
+                                break
+                        
+                        session = get_session()
+                        try:
+                            existing = session.query(TasksIdNameMap).filter_by(task_id=task_id).first()
+                            if existing:
+                                existing.task_name = task["title"]
+                                existing.last_synced = datetime.datetime.now(tz=datetime.timezone.utc) # type: ignore
+                            session.commit() 
+                        finally:
+                            session.close()
+                    else:
+                        if task["status"] == "completed":
+                            curr_task_list.append(f"\u2705 {task['title']}")
+                        else:
+                            curr_task_list.append(f"\u274C {task["title"]}")
+
+                        session = get_session()
+                        try:
+                            new_mapping = TasksIdNameMap(
+                                task_id=task_id,
+                                task_name=task["title"],
+                                last_synced=datetime.datetime.now(tz=datetime.timezone.utc)
+                            )
+                            session.add(new_mapping)
+                            session.commit()
+                        finally:
+                            session.close()
+
+                    new_task_list = "\n".join(curr_task_list)
+                    updated_event = self.service.events().patch(
+                        calendarId=self.sync_to[1],
+                        eventId=todo_event_id,
+                        body={"description" : new_task_list}
+                    ).execute()
+
+    def poll_events(self):
+        now = datetime.datetime.now(tz=ZoneInfo("America/Phoenix")).isoformat()
+        day = now[:11] + "00:00:00.000Z"
+
+        sync_tokens = {}
+        for cal_id in self.sync_from.values():
+            sync_tokens[cal_id] = None
+
+        for cal_name, cal_id in self.sync_from.items():
+            if sync_tokens[id] is None:
+                events_result = self.service.events().list(
+                    calendarId=id,
+                    singleEvents=True,
+                    timeMin=now,
+                ).execute()
+                events = events_result.get("items", [])
+                sync_tokens[id] = events_result.get("nextSyncToken")
+
+                # TODO: manually compare gathered events to existing events (DB?)
+                # if they are not changed, remove them from events
+            else:
+                events_result = self.service.events.list(
+                    calendarId=id,
+                    syncToken=sync_tokens[id],
+                ).execute()
+                events = events_result.get("items", [])
+                sync_tokens[id] = events_result.get("nextSyncToken")
+
+            if events:
+                # TODO: add new or changed event 
+                # have to check if it already exists in db
+                # if it does, update the snyc_to event 
+                # if not, make a new sync_to event and add to db
+                pass
