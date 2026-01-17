@@ -45,6 +45,7 @@ def get_credentials():
             creds_dict = json.load(f)
             journey_creds = Credentials(
                 token=creds_dict["Access Token"],
+                token_uri="https://oauth2.googleapis.com/token",
                 refresh_token=creds_dict["Refresh Token"],
                 client_id=creds_dict["Client ID"],
                 client_secret=creds_dict["Client Secret"]
@@ -57,6 +58,7 @@ def get_credentials():
             creds_dict = json.load(f)
             mollee_creds = Credentials(
                 token=creds_dict["Access Token"],
+                token_uri="https://oauth2.googleapis.com/token",
                 refresh_token=creds_dict["Refresh Token"],
                 client_id=creds_dict["Client ID"],
                 client_secret=creds_dict["Client Secret"]
