@@ -9,7 +9,8 @@ from calendar_functions import (get_events,
                                 init_sync_events, 
                                 sync_events,
                                 init_sync_tasks,
-                                sync_tasks)
+                                sync_tasks,
+                                get_updated_events)
 from config import get_cal_ids
 
 SCOPES = ["https://www.googleapis.com/auth/calendar",
@@ -41,18 +42,22 @@ def journey():
 
     # Wipe Sync To Calendar 
     if False:
-        clear_sync_to_calendar("journey", cal_service, cal_ids.sync_to)
+        confirm = input(f"Confirm clearing of Sync To Calendar by typing YES: ")
+        if confirm == "YES":
+            clear_sync_to_calendar("journey", cal_service, cal_ids.sync_to)
         return
     
     # Wipe TODO events
     if False:
-        clear_todo_events(cal_service, cal_ids.sync_to)
+        confirm = input(f"Confirm clearing of TODO events in calendar {calendar.name} by typing YES: ")
+        if confirm == "YES":
+            clear_todo_events(cal_service, cal_ids.sync_to)
         return
 
     # Initialize Sync To Calendar or update it 
     if os.path.exists("mapping/journey.json"):
         logger.info("Syncing events")
-        # sync_events("journey", cal_service, cal_ids.sync_from, cal_ids.sync_to)
+        sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
     else:
         logger.info("Initializing sync to")
         init_sync_events("journey", cal_service, cal_ids.sync_from, cal_ids.sync_to)
@@ -77,14 +82,15 @@ def mollee():
 
     # Wipe sync to 
     if False:
-        clear_sync_to_calendar("mollee", cal_service, cal_ids.sync_to)
+        confirm = input(f"Confirm clearing of Sync To Calendar by typing YES: ")
+        if confirm == "YES":
+            clear_sync_to_calendar("mollee", cal_service, cal_ids.sync_to)
         return
 
     # Initialize sync to calendar or update it 
     if os.path.exists("mapping/mollee.json"):
         logger.info("Syncing events")
-        # sync_events("mollee", cal_service, cal_ids.sync_from, cal_ids.sync_to)
-        pass
+        sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
     else:
         logger.info("Initializing sync to")
         init_sync_events("mollee", cal_service, cal_ids.sync_from, cal_ids.sync_to)
