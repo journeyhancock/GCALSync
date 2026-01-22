@@ -43,7 +43,7 @@ def get_events(service, calendars: Calendar | List[Calendar], update_sync_tokens
     if not isinstance(calendars, list): calendars = [calendars]
 
     try:
-        with open("sync_tokens/mapping.json", "r") as f:
+        with open("sync_tokens/event_tokens.json", "r") as f:
             sync_tokens = json.load(f)
     except FileNotFoundError:
         sync_tokens = {}
@@ -73,13 +73,13 @@ def get_events(service, calendars: Calendar | List[Calendar], update_sync_tokens
     logger.info("Finished fetching events")
 
     if update_sync_tokens:
-        with open("sync_tokens/tokens.json", "w") as f: json.dump(sync_tokens, f)
+        with open("sync_tokens/event_tokens.json", "w") as f: json.dump(sync_tokens, f)
 
     future_events = [event for event in events if is_future_event(event)]
     logging.info(f"Filtered {len(events)} events down to {len(future_events)} future events")
     return future_events
 
-def reinit_expired_sync_token(service, cal: Calendar, sync_to: Calendar, name: str):
+def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar, name: str):
     events = get_events(service, cal, update_sync_tokens=True)
 
     try:
@@ -124,7 +124,7 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
     if not isinstance(calendars, list): calendars = [calendars]
 
     try:
-        with open("sync_tokens/tokens.json", "r") as f:
+        with open("sync_tokens/event_tokens.json", "r") as f:
             sync_tokens = json.load(f)
     except FileNotFoundError:
         sync_tokens = {}
@@ -144,7 +144,7 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                     maxResults=250,
                     showDeleted=True,
                     pageToken=page_token,
-                    syncToken = sync_token
+                    syncToken=sync_token
                 ).execute()
                 fetched_events = events_result.get("items", [])
                 events.extend(fetched_events)
@@ -159,18 +159,18 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
             except HttpError as e:
                 if e.resp.status == 410:
                     logger.warning(f"Sync token expired for {cal.name}")
-                    reinit_expired_sync_token(service, cal, sync_to, name)
+                    reinit_expired_calendar_sync_token(service, cal, sync_to, name)
                 else:
                     raise
 
     if update_sync_tokens: 
-        with open("sync_tokens/tokens.json", "w") as f: json.dump(sync_tokens, f)
+        with open("sync_tokens/event_tokens.json", "w") as f: json.dump(sync_tokens, f)
 
     logger.info("Finished fetching events")
 
     return events
 
-def init_sync_events(name: str, service, sync_from: List[Calendar], sync_to: Calendar) -> None:
+def init_sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str) -> None:
     sync_from_events = get_events(service, sync_from, update_sync_tokens=True)
     logging.info(f"Fetched {len(sync_from_events)} sync from events")
 
@@ -256,14 +256,26 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
     with open(f"mapping/{name}.json", "w") as f:
         json.dump(mapping, f)
 
-def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
+def is_future_task(task):
     now = datetime.now(tz=PHX).isoformat()
     day = now[:11] + "00:00:00.000Z"
 
-    page_token = None
+    due_time = task["due"]
+    return True if due_time >= day else False
+
+def get_tasks(service, update_sync_time: bool):
+    try:
+        with open("sync_tokens/tasks_sync_time.json", "r") as f:
+            tasks_time = json.load(f)
+    except FileNotFoundError:
+        tasks_time = {}
+
     tasks = []
+    page_token = None
+    logger.info("Starting to get tasks")
+    
     while True:
-        tasks_result = tasks_service.tasks().list(
+        tasks_result = service.tasks().list(
             tasklist="@default",
             showHidden=True,
             showCompleted=True,
@@ -272,28 +284,82 @@ def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
         ).execute()
         task_items = tasks_result.get("items", [])
         tasks.extend(task_items)
-        
         logging.info(f"Fetched {len(task_items)} tasks")
 
         page_token = tasks_result.get("nextPageToken")
-        if not page_token: break
+        if not page_token: 
+            if update_sync_time: tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
+            break
 
-    # Only handle tasks that are today or in the future 
-    logging.info(f"Processing {len(tasks)} tasks")
+    logger.info("Finished fetching tasks")
+
+    if update_sync_time:
+        with open("sync_tokens/tasks_sync_time.json", "w") as f:
+            json.dump(tasks_time, f)
+
+    future_tasks = [task for task in tasks if is_future_task(task)]
+    logging.info(f"Filtered {len(tasks)} tasks down to {len(future_tasks)} future tasks")
+    return future_tasks
+
+def get_updated_tasks(tasks_service, update_sync_time: bool):
+    try:
+        with open("sync_tokens/tasks_sync_time.json", "r") as f:
+            tasks_time = json.load(f)
+    except FileNotFoundError:
+        tasks_time = {}
+
+    tasks = []
+    logger.info("Starting to get updated tasks")
+    page_token = None
+    sync_time = tasks_time["tasks"]
+
+    while True:
+        tasks_result = tasks_service.tasks().list(
+            tasklist="@default",
+            showHidden=True,
+            showCompleted=True,
+            showDeleted=True,
+            updatedMin=sync_time,
+            pageToken=page_token
+        ).execute()
+        fetched_tasks = tasks_result.get("items", [])
+        tasks.extend(fetched_tasks)
+        logger.info(f"Fetched {len(fetched_tasks)} updated events")
+
+        page_token = tasks_result.get("nextPageToken")
+        if not page_token:
+            if update_sync_time: tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
+            break
+
+    if update_sync_time:
+        with open("sync_tokens/tasks_sync_time.json", "w") as f: json.dump(tasks_time, f)
+
+    logger.info("Finished fetching tasks")
+
+    return tasks
+
+def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
+    now = datetime.now(tz=PHX).isoformat()
+    day = now[:11] + "00:00:00.000Z"
+
+    tasks = get_tasks(tasks_service, update_sync_time=True)
+
+    # Sort tasks by their day
     sorted_tasks = defaultdict(list)
+    logging.info(f"Processing {len(tasks)} tasks")
     for i, task in enumerate(tasks):
-        due_time = task["due"]
-        if due_time >= day: 
-            sorted_tasks[due_time[:11] + "00:00:00.000Z"].append(task)
-            logging.info(f"[{i + 1}/{len(tasks)}] {task["title"]} in day {due_time[:11]}")
+        due_time = task.get("due")
+        sorted_tasks[due_time[:11] + "00:00:00.000Z"].append(task)
+        logging.info(f"[{i + 1}/{len(tasks)}] {task["title"]} in day {due_time[:11]}")
     
     logging.info(f"Creating events for {sum(len(task_list) for task_list in sorted_tasks.values())}")
-    mapping = {}
+    day_event_mapping = {}
+    task_event_mapping = {}
     for i, (day, task_list) in enumerate(sorted_tasks.items()):
         formatted_task_list = []
         for task in task_list:
             if task["status"] == "completed":
-                formatted_task_list.append(f"\u2705 {task['title']}")
+                formatted_task_list.append(f"\u2705 {task["title"]}")
             else:
                 formatted_task_list.append(f"\u274C {task["title"]}")
         new_task_list = "\n".join(formatted_task_list)
@@ -311,14 +377,117 @@ def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
         ).execute()
         logging.info(f"Day [{i + 1}/{len(sorted_tasks.keys())}] added tasks\n{new_task_list}")
         
-        mapping[created_event["id"]] = [task["id"] for task in task_list]
-        logging.info("Finished syncing tasks")
+        day_event_mapping[day] = created_event["id"]
+        for task in task_list: task_event_mapping[task["id"]] = created_event["id"]
+        
+    logging.info("Finished syncing tasks")
 
-    with open("mapping/tasks.json", "w") as f:
-        json.dump(mapping, f)
+    with open("mapping/days_events.json", "w") as f:
+        json.dump(day_event_mapping, f)
+    with open("mapping/tasks_events.json", "w") as f:
+        json.dump(task_event_mapping, f)
+
+def get_event(service, event_id: str, sync_to: Calendar):
+    return service.events().get(
+        calendarId=sync_to.id,
+        eventId=event_id
+    ).execute()
+
+def remove_task(cal_service, sync_to: Calendar, event, task):
+    todo_list = event.get("description").strip()
+    new_todo_list = "\n".join(
+        line for line in todo_list.splitlines()
+        if line.lstrip("\u2705\u274C ").strip() != task["title"]
+    )
+
+    updated_event = cal_service.events().patch(
+        calendarId=sync_to.id,
+        eventId=event["id"],
+        body={"description": new_todo_list}
+    ).execute()
 
 def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
-    pass
+    tasks = get_updated_tasks(tasks_service, update_sync_time=True)
+    logger.info(f"Found {len(tasks)} tasks to sync")
+    if len(tasks) == 0: return
+
+    with open("mapping/days_events.json", "r") as f:
+        days_events = json.load(f)
+    stored_days = set(days_events.keys())
+
+    with open("mapping/tasks_events.json", "r") as f:
+        tasks_events = json.load(f)
+    stored_tasks = set(tasks_events.keys())
+
+    for i, task in enumerate(tasks):
+        day = task["due"][:11] + "00:00:00.000Z"
+        if day in stored_days:
+            event_id = days_events[day]
+
+            if task.get("deleted"):
+                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Deleted - Removing from TODO event")
+
+                event = get_event(cal_service, event_id, sync_to)
+                remove_task(cal_service, sync_to, event, task)
+                del tasks_events[task["id"]]
+            else:
+                task_id = task["id"]
+                if task_id in stored_tasks:
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in existing TODO event")
+
+                    old_event_id = tasks_events[task_id]
+                    old_event = cal_service.events().get(
+                        calendarId=sync_to.id,
+                        eventId=old_event_id
+                    ).execute()
+                    remove_task(cal_service, sync_to, old_event, task)
+                else:
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event")
+
+                event = get_event(cal_service, event_id, sync_to)
+                todo_list = event.get("description")
+
+                new_todo_list = todo_list + f"\n{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
+                updated_event = cal_service.events().patch(
+                    calendarId=sync_to.id,
+                    eventId=days_events[day],
+                    body={"description": new_todo_list}
+                ).execute()
+                    
+                tasks_events[task_id] = event_id
+        else:
+            task_id = task["id"]
+            if task_id in stored_tasks:
+                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in new TODO event")
+
+                old_event_id = tasks_events[task["id"]]
+                old_event = get_event(cal_service, old_event_id, sync_to)
+                remove_task(cal_service, sync_to, old_event, task)
+            else:
+                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in new TODO event")
+                
+            new_event = {
+                "summary": "TODO",
+                "start": {"dateTime": day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
+                "end": {"dateTime": day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
+                "description": f"{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
+            }
+
+            created_event = cal_service.events().insert(
+                calendarId=sync_to.id,
+                body=new_event
+            ).execute()
+            
+            days_events[day] = created_event["id"]
+            tasks_events[task_id] = created_event["id"]
+            
+    logger.info("Finished syncing tasks")
+    
+    with open("mapping/days_events.json", "w") as f:
+        json.dump(days_events, f)
+
+    with open(f"mapping/tasks_events.json", "w") as f:
+        json.dump(tasks_events, f) 
 
 def clear_sync_to_calendar(name: str, service, calendar: Calendar):
     logging.info(f"Clearing calendar {calendar.name}")
@@ -342,9 +511,9 @@ def clear_sync_to_calendar(name: str, service, calendar: Calendar):
         os.remove(f"mapping/{name}.json")
         logging.info("Removing mapping")
 
-    if os.path.exists("sync_tokens/tokens.json"):
-        os.remove("sync_tokens/tokens.json")
-        logging.info("Remove sync tokens")
+    if os.path.exists("sync_tokens/event_tokens.json"):
+        os.remove("sync_tokens/event_tokens.json")
+        logging.info("Remove event sync tokens")
 
 def clear_todo_events(service, calendar: Calendar):
     logging.info(f"Clearing TODO events in {calendar.name}")
@@ -362,6 +531,14 @@ def clear_todo_events(service, calendar: Calendar):
 
     logging.info("Finished clearing events")
 
-    if os.path.exists(f"mapping/tasks.json"): 
-        os.remove(f"mapping/tasks.json")
-        logging.info("Removing mapping")
+    if os.path.exists("sync_tokens/task_token.json"):
+        os.remove("sync_tokens/task_token.json")
+        logging.info("Removing tasks sync token")
+
+    if os.path.exists("mapping/days_events.json"): 
+        os.remove("mapping/days_events.json")
+        logging.info("Removing days events mapping")
+    
+    if os.path.exists("mapping/tasks_events.json"):
+        os.remove("mapping/tasks_events.json")
+        logging.info("Removing tasks events mapping")
