@@ -12,6 +12,8 @@ from calendar_functions import (get_events,
                                 sync_tasks,
                                 get_updated_events)
 from config import get_cal_ids
+from storage_functions import (prune_calendar,
+                               prune_tasks)
 
 SCOPES = ["https://www.googleapis.com/auth/calendar",
           "https://www.googleapis.com/auth/tasks.readonly"]
@@ -70,6 +72,11 @@ def journey():
         logger.info("Initializing TODOs")
         init_sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
 
+    # Prune storage of old mappings
+    if True:
+        #prune_calendar(cal_service, cal_ids.sync_to, "journey")
+        prune_tasks(tasks_service)
+
 def mollee():
     logger.info("-- Mollee --")
     # Build services
@@ -94,6 +101,10 @@ def mollee():
     else:
         logger.info("Initializing sync to")
         init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
+
+    # Prune storage of old mappings
+    if True:
+        prune_calendar(cal_service, cal_ids.sync_to, "mollee")
 
 def main():
     journey()

@@ -96,7 +96,7 @@ def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar
                 delete_event(service, sync_to, mapping[event_id])
             except HttpError:
                 pass
-            del mapping[event_id]
+            mapping.pop(event_id)
 
         new_event = {
             "summary": event["summary"],
@@ -215,12 +215,12 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
             sync_to_event_id = mapping[event_id]
 
             if event["status"] == "cancelled":
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event ")
+                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event")
                 
                 delete_event(service, sync_to, mapping[event_id])
-                del mapping[event_id]
+                mapping.pop(event_id)
             else:
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event ")
+                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event")
 
                 updated_info = {
                     "summary": event["summary"],
@@ -236,7 +236,7 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                 ).execute()
         else:
             if event["status"] != "cancelled":
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event ")
+                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event")
 
                 new_event = {
                     "summary": event["summary"],
@@ -251,6 +251,8 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                 ).execute()
 
                 mapping[event_id] = created_event["id"]
+            else:
+                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Canceled - Skipping (Not in sync to)")
 
     logger.info("Finished syncing events")
     with open(f"mapping/{name}.json", "w") as f:
@@ -387,11 +389,17 @@ def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
     with open("mapping/tasks_events.json", "w") as f:
         json.dump(task_event_mapping, f)
 
-def get_event(service, event_id: str, sync_to: Calendar):
+def get_event(service, event_id: str, cal: Calendar):
     return service.events().get(
-        calendarId=sync_to.id,
+        calendarId=cal.id,
         eventId=event_id
     ).execute()
+
+def get_task(service, task_id: str):
+    return service.tasks().get(
+        tasklist="@default",
+        task=task_id
+    ).execute() 
 
 def remove_task(cal_service, sync_to: Calendar, event, task):
     todo_list = event.get("description").strip()
@@ -429,7 +437,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
 
                 event = get_event(cal_service, event_id, sync_to)
                 remove_task(cal_service, sync_to, event, task)
-                del tasks_events[task["id"]]
+                tasks_events.pop(task["id"])
             else:
                 task_id = task["id"]
                 if task_id in stored_tasks:
