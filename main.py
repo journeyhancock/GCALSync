@@ -73,8 +73,8 @@ def journey():
         init_sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
 
     # Prune storage of old mappings
-    if True:
-        #prune_calendar(cal_service, cal_ids.sync_to, "journey")
+    if False:
+        prune_calendar(cal_service, cal_ids.sync_to, "journey")
         prune_tasks(tasks_service)
 
 def mollee():
@@ -103,7 +103,7 @@ def mollee():
         init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
 
     # Prune storage of old mappings
-    if True:
+    if False:
         prune_calendar(cal_service, cal_ids.sync_to, "mollee")
 
 def main():

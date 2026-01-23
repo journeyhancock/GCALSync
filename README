@@ -1,0 +1,11 @@
+A python app to sync events across a user's different google calendars into one calendar for easy sharing. 
+
+If using yourself, you'll need to create a project in Google API dashboard and allow it access to the Calendar API and Tasks API. Then download your client secret and move it into the project as "tokens/client_secret.json". Run get_tokens.py to create a refresh token so you only have to do the oauth login once. 
+
+After that edit the config in config.py to make sync_from the names of the calendars you want to pull events from and make sync_to the name of the calendar you want events to go in to. If you use tasks, this is where the task TODO events will go as well. 
+
+If syncing issues arise, edit the wipe if statements in main.py to be True. Run main.py and then everything should be resynced. Change all the wipe if statements back to False and continue as normal. 
+
+I would recommend running the pruning every couple days just to make sure the mapping json files don't get oversized. 
+
+Also, sync tokens and event/tasks ids are useless without an oauth token. 
