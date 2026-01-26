@@ -5,6 +5,8 @@
 /Bad
 /Sync
 /Database
+/mapping
+/sync_tokens
 tokens/journey_creds.json
 tokens/mollee_creds.json
 tokens/client_secret.json

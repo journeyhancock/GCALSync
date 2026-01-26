@@ -95,8 +95,8 @@ def update_cloud_files(client: storage.Client):
     upload_file(client, file="mollee_event_tokens.json", data=mollee_event_tokens)
     logging.info("Uploaded Mollee event tokens")
 
-    with open("sync_tokens/tasks_sync_time.json", "r") as f: task_sync_time = json.load(f)
-    upload_file(client, file="task_sync_time.json", data=task_sync_time)
+    with open("sync_tokens/tasks_sync_time.json", "r") as f: tasks_sync_time = json.load(f)
+    upload_file(client, file="tasks_sync_time.json", data=tasks_sync_time)
     logging.info("Uploaded tasks sync time")
 
 def journey():
@@ -179,7 +179,7 @@ def main():
         project="quiet-engine-471620-s7",
         credentials=creds.journey_creds)
     
-    #update_local_files(client=client)
+    update_local_files(client=client)
 
     journey()
     mollee()
