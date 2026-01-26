@@ -21,10 +21,14 @@ def extract_ids(events) -> Set[str]:
     return ids
 
 def delete_event(service, cal: Calendar, id: str):
-    service.events().delete(
-        calendarId=cal.id,
-        eventId=id
-    ).execute()
+    try:
+        service.events().delete(
+            calendarId=cal.id,
+            eventId=id
+        ).execute()
+    except HttpError as e:
+        if e.resp.status == 410:
+            logger.warning(f"Event already deleted in {cal.name}")
 
 def is_future_event(event):
     start = event.get("start", {})
@@ -39,11 +43,11 @@ def is_future_event(event):
         time.min, 
         tzinfo=PHX)
 
-def get_events(service, calendars: Calendar | List[Calendar], update_sync_tokens: bool):
+def get_events(service, calendars: Calendar | List[Calendar], name: str, update_sync_tokens: bool):
     if not isinstance(calendars, list): calendars = [calendars]
 
     try:
-        with open("sync_tokens/event_tokens.json", "r") as f:
+        with open(f"sync_tokens/{name}_event_tokens.json", "r") as f:
             sync_tokens = json.load(f)
     except FileNotFoundError:
         sync_tokens = {}
@@ -73,14 +77,14 @@ def get_events(service, calendars: Calendar | List[Calendar], update_sync_tokens
     logger.info("Finished fetching events")
 
     if update_sync_tokens:
-        with open("sync_tokens/event_tokens.json", "w") as f: json.dump(sync_tokens, f)
+        with open(f"sync_tokens/{name}_event_tokens.json", "w") as f: json.dump(sync_tokens, f)
 
     future_events = [event for event in events if is_future_event(event)]
     logging.info(f"Filtered {len(events)} events down to {len(future_events)} future events")
     return future_events
 
 def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar, name: str):
-    events = get_events(service, cal, update_sync_tokens=True)
+    events = get_events(service, cal, name, update_sync_tokens=True)
 
     try:
         with open(f"mapping/{name}.json") as f:
@@ -102,7 +106,7 @@ def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar
             "summary": event["summary"],
             "start": event["start"],
             "end": event["end"],
-            "description": event.get("description")
+            "description": event.get("description", "")
         }
 
         if name == "mollee" and event["summary"] == "Journey anni <3":
@@ -124,7 +128,7 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
     if not isinstance(calendars, list): calendars = [calendars]
 
     try:
-        with open("sync_tokens/event_tokens.json", "r") as f:
+        with open(f"sync_tokens/{name}_event_tokens.json", "r") as f:
             sync_tokens = json.load(f)
     except FileNotFoundError:
         sync_tokens = {}
@@ -164,14 +168,14 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                     raise
 
     if update_sync_tokens: 
-        with open("sync_tokens/event_tokens.json", "w") as f: json.dump(sync_tokens, f)
+        with open(f"sync_tokens/{name}_event_tokens.json", "w") as f: json.dump(sync_tokens, f)
 
     logger.info("Finished fetching events")
 
     return events
 
 def init_sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str) -> None:
-    sync_from_events = get_events(service, sync_from, update_sync_tokens=True)
+    sync_from_events = get_events(service, sync_from, name, update_sync_tokens=True)
     logging.info(f"Fetched {len(sync_from_events)} sync from events")
 
     mapping = {}
@@ -226,7 +230,7 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                     "summary": event["summary"],
                     "start": event["start"],
                     "end": event["end"],
-                    "description": event.get("description")
+                    "description": event.get("description", "")
                 }
 
                 updated_event = service.events().patch(
@@ -242,7 +246,7 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                     "summary": event["summary"],
                     "start": event["start"],
                     "end": event["end"],
-                    "description": event.get("description")
+                    "description": event.get("description", "")
                 }
 
                 created_event = service.events().insert(
@@ -252,7 +256,7 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
 
                 mapping[event_id] = created_event["id"]
             else:
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Canceled - Skipping (Not in sync to)")
+                logger.info(f"[{i + 1}/{len(sync_from_events)}]: Sync From Event Canceled - Skipping (Not in sync to)")
 
     logger.info("Finished syncing events")
     with open(f"mapping/{name}.json", "w") as f:
@@ -402,7 +406,7 @@ def get_task(service, task_id: str):
     ).execute() 
 
 def remove_task(cal_service, sync_to: Calendar, event, task):
-    todo_list = event.get("description").strip()
+    todo_list = event.get("description", "").strip()
     new_todo_list = "\n".join(
         line for line in todo_list.splitlines()
         if line.lstrip("\u2705\u274C ").strip() != task["title"]
@@ -453,7 +457,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                     logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event")
 
                 event = get_event(cal_service, event_id, sync_to)
-                todo_list = event.get("description")
+                todo_list = event.get("description", "")
 
                 new_todo_list = todo_list + f"\n{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
                 updated_event = cal_service.events().patch(
@@ -500,7 +504,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
 def clear_sync_to_calendar(name: str, service, calendar: Calendar):
     logging.info(f"Clearing calendar {calendar.name}")
     
-    events = get_events(service, calendar, update_sync_tokens=False)
+    events = get_events(service, calendar, name, update_sync_tokens=False)
     logging.info(f"Clearing {len(events)} events")
     
     for i, event in enumerate(events):
@@ -519,14 +523,14 @@ def clear_sync_to_calendar(name: str, service, calendar: Calendar):
         os.remove(f"mapping/{name}.json")
         logging.info("Removing mapping")
 
-    if os.path.exists("sync_tokens/event_tokens.json"):
-        os.remove("sync_tokens/event_tokens.json")
-        logging.info("Remove event sync tokens")
+    if os.path.exists(f"sync_tokens/{name}_event_tokens.json"):
+        os.remove(f"sync_tokens/{name}_event_tokens.json")
+        logging.info(f"Removed {name} event sync tokens")
 
 def clear_todo_events(service, calendar: Calendar):
     logging.info(f"Clearing TODO events in {calendar.name}")
     
-    events = get_events(service, calendar, update_sync_tokens=False)
+    events = get_events(service, calendar, "journey", update_sync_tokens=False)
     for i, event in enumerate(events):
         if event["summary"] == "TODO": 
             service.events().delete(
@@ -539,9 +543,9 @@ def clear_todo_events(service, calendar: Calendar):
 
     logging.info("Finished clearing events")
 
-    if os.path.exists("sync_tokens/task_token.json"):
-        os.remove("sync_tokens/task_token.json")
-        logging.info("Removing tasks sync token")
+    if os.path.exists("sync_tokens/tasks_sync_time.json"):
+        os.remove("sync_tokens/tasks_sync_time.json")
+        logging.info("Removing tasks sync time")
 
     if os.path.exists("mapping/days_events.json"): 
         os.remove("mapping/days_events.json")

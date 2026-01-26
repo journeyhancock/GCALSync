@@ -7,7 +7,8 @@ from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
 SCOPES = ["https://www.googleapis.com/auth/calendar",
-          "https://www.googleapis.com/auth/tasks.readonly"]
+          "https://www.googleapis.com/auth/tasks.readonly",
+          "https://www.googleapis.com/auth/cloud-platform"]
 
 @dataclass
 class Creds:
