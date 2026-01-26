@@ -7,6 +7,7 @@
 /Database
 /mapping
 /sync_tokens
+/storage
 tokens/journey_creds.json
 tokens/mollee_creds.json
 tokens/client_secret.json

@@ -1,10 +1,9 @@
-import json
 import logging
 import os
 
 from googleapiclient.discovery import build
 from google.cloud import storage
-from gcloud_storage import download_file, upload_file
+from gcloud_storage import update_local_files, update_cloud_files
 from tokens.get_tokens import get_credentials, get_refresh_token
 from calendar_functions import (get_events, 
                                 clear_sync_to_calendar,
@@ -17,6 +16,7 @@ from calendar_functions import (get_events,
 from config import get_cal_ids
 from storage_functions import (prune_calendar,
                                prune_tasks)
+from util import read_file, write_file
 
 SCOPES = ["https://www.googleapis.com/auth/calendar",
           "https://www.googleapis.com/auth/tasks.readonly",
@@ -34,70 +34,6 @@ logger = logging.getLogger(__name__)
 # Fetch or create credentials if necessary
 logger.info("Fetching credentials")
 creds = get_credentials()
-
-def update_local_files(client: storage.Client):
-    logging.info("Updating local files")
-
-    # mappings
-    journey = download_file(client, "journey.json")
-    with open("mapping/journey.json", "w") as f: json.dump(journey, f)
-    logging.info("Downloaded Journey event mapping")
-
-    mollee = download_file(client, "mollee.json")
-    with open("mapping/mollee.json", "w") as f: json.dump(mollee, f)
-    logging.info("Downloaded Mollee event mapping")
-
-    days_events = download_file(client, "days_events.json")
-    with open("mapping/days_events.json", "w") as f: json.dump(days_events, f)
-    logging.info("Downloaded days events mapping")
-
-    tasks_events = download_file(client, "tasks_events.json")
-    with open("mapping/tasks_events.json", "w") as f: json.dump(tasks_events, f)
-    logging.info("Downloaded tasks events mapping")
-
-    # sync tokens
-    journey_event_tokens = download_file(client, "journey_event_tokens.json")
-    with open("sync_tokens/journey_event_tokens.json", "w") as f: json.dump(journey_event_tokens, f)
-    logging.info("Downloaded Journey event tokens")
-
-    mollee_event_tokens = download_file(client, "mollee_event_tokens.json")
-    with open("sync_tokens/mollee_event_tokens.json", "w") as f: json.dump(mollee_event_tokens, f)
-    logging.info("Downloaded Mollee event tokens")
-
-    tasks_sync_time = download_file(client, "tasks_sync_time.json")
-    with open("sync_tokens/tasks_sync_time.json", "w") as f: json.dump(tasks_sync_time, f)
-    logging.info("Downloaded task sync time")
-
-def update_cloud_files(client: storage.Client):
-    # mappings
-    with open("mapping/journey.json", "r") as f: journey = json.load(f)
-    upload_file(client, file="journey.json", data=journey)
-    logging.info("Uploaded Journey event mapping")
-
-    with open("mapping/mollee.json", "r") as f: mollee = json.load(f)
-    upload_file(client, file="mollee.json", data=mollee)
-    logging.info("Uploaded Mollee event mapping")
-
-    with open("mapping/days_events.json", "r") as f: days_events = json.load(f)
-    upload_file(client, file="days_events.json", data=days_events)
-    logging.info("Uploaded days events mapping")
-
-    with open("mapping/tasks_events.json", "r") as f: tasks_events = json.load(f)
-    upload_file(client, file="tasks_events.json", data=tasks_events)
-    logging.info("Uploaded tasks events mapping")
-
-    # sync tokens
-    with open("sync_tokens/journey_event_tokens.json", "r") as f: journey_event_tokens = json.load(f)
-    upload_file(client, file="journey_event_tokens.json", data=journey_event_tokens)
-    logging.info("Uploaded Journey event tokens")
-
-    with open("sync_tokens/mollee_event_tokens.json", "r") as f: mollee_event_tokens = json.load(f)
-    upload_file(client, file="mollee_event_tokens.json", data=mollee_event_tokens)
-    logging.info("Uploaded Mollee event tokens")
-
-    with open("sync_tokens/tasks_sync_time.json", "r") as f: tasks_sync_time = json.load(f)
-    upload_file(client, file="tasks_sync_time.json", data=tasks_sync_time)
-    logging.info("Uploaded tasks sync time")
 
 def journey():
     logger.info("-- Journey --")
@@ -125,7 +61,7 @@ def journey():
         return
 
     # Initialize Sync To Calendar or update it 
-    if os.path.exists("mapping/journey.json"):
+    if read_file("journey_events") != {}:
         logger.info("Syncing events")
         sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
     else:
@@ -133,7 +69,7 @@ def journey():
         init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
 
     # Initialize task TODO events in Sync To Calendar or update it
-    if os.path.exists("mapping/days_events.json") and os.path.exists("mapping/tasks_events.json"):
+    if read_file("days_events") != {} and read_file("tasks_events") != {}:
         logger.info("Syncing tasks")
         sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
     else:
@@ -163,7 +99,7 @@ def mollee():
         return
 
     # Initialize sync to calendar or update it 
-    if os.path.exists("mapping/mollee.json"):
+    if read_file("mollee_events") != {}:
         logger.info("Syncing events")
         sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
     else:

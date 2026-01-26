@@ -3,18 +3,14 @@ import logging
 
 from calendar_functions import get_task, is_future_task, get_event, is_future_event
 from datetime import datetime
-from util import Calendar
+from util import Calendar, read_file, write_file
 from zoneinfo import ZoneInfo
 
 PHX = ZoneInfo("America/Phoenix")
 logger = logging.getLogger(__name__)
 
 def prune_calendar(service, sync_to: Calendar, name: str):
-    try:
-        with open(f"mapping/{name}.json", "r") as f:
-            mapping = json.load(f)
-    except FileNotFoundError:
-        mapping = {}
+    mapping = read_file(f"mapping/{name}.json")
 
     logger.info(f"Pruning {name} Sync To")
     to_remove = []
@@ -29,8 +25,7 @@ def prune_calendar(service, sync_to: Calendar, name: str):
     for event_id in to_remove: mapping.pop(event_id)
     logger.info(f"Pruned {len(to_remove)} {name} event mappings")
 
-    with open(f"mapping/{name}.json", "w") as f:
-        json.dump(mapping, f)
+    write_file(f"mapping/{name}.json", mapping)
 
     logger.info("Finished pruning")
 
@@ -38,17 +33,8 @@ def prune_tasks(service):
     now = datetime.now(tz=PHX).isoformat()
     day = now[:11] + "00:00:00.000Z"
 
-    try:
-        with open("mapping/days_events.json", "r") as f:
-            days_events = json.load(f)
-    except FileNotFoundError:
-        days_events = {}
-
-    try:
-        with open("mapping/tasks_events.json", "r") as f:
-            tasks_events = json.load(f)
-    except FileNotFoundError:
-        tasks_events = {}
+    days_events = read_file("mapping/days_events.json")
+    tasks_events = read_file("mapping/tasks_events.json")
 
     logger.info("Pruning Tasks")
     to_remove = []
@@ -73,10 +59,7 @@ def prune_tasks(service):
     for task_id in to_remove: tasks_events.pop(task_id)
     logger.info(f"Pruned {len(to_remove)} task:event mappings")
 
-    with open("mapping/days_events.json", "w") as f:
-        json.dump(days_events, f)
-
-    with open("mapping/tasks_events.json", "w") as f:
-        json.dump(tasks_events, f)
+    write_file("mapping/days_events.json", days_events)
+    write_file("mapping/tasks_events.json", tasks_events)
 
     logger.info("Finished pruning")

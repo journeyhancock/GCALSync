@@ -8,7 +8,7 @@ from datetime import datetime, time
 from dateutil.parser import isoparse
 from googleapiclient.errors import HttpError
 from typing import List, Set
-from util import Calendar
+from util import Calendar, read_file, write_file
 from zoneinfo import ZoneInfo
 
 PHX = ZoneInfo("America/Phoenix")
@@ -46,11 +46,7 @@ def is_future_event(event):
 def get_events(service, calendars: Calendar | List[Calendar], name: str, update_sync_tokens: bool):
     if not isinstance(calendars, list): calendars = [calendars]
 
-    try:
-        with open(f"sync_tokens/{name}_event_tokens.json", "r") as f:
-            sync_tokens = json.load(f)
-    except FileNotFoundError:
-        sync_tokens = {}
+    sync_tokens = read_file(f"{name}_event_tokens")
 
     events = []
     logger.info("Starting to get events")
@@ -76,8 +72,7 @@ def get_events(service, calendars: Calendar | List[Calendar], name: str, update_
 
     logger.info("Finished fetching events")
 
-    if update_sync_tokens:
-        with open(f"sync_tokens/{name}_event_tokens.json", "w") as f: json.dump(sync_tokens, f)
+    if update_sync_tokens: write_file(f"{name}_event_tokens", sync_tokens)
 
     future_events = [event for event in events if is_future_event(event)]
     logging.info(f"Filtered {len(events)} events down to {len(future_events)} future events")
@@ -86,11 +81,7 @@ def get_events(service, calendars: Calendar | List[Calendar], name: str, update_
 def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar, name: str):
     events = get_events(service, cal, name, update_sync_tokens=True)
 
-    try:
-        with open(f"mapping/{name}.json") as f:
-            mapping = json.load(f)
-    except FileNotFoundError:
-        mapping = {} 
+    mapping = read_file(f"{name}_events")
 
     for i, event in enumerate(events):
         event_id = event["id"]
@@ -121,17 +112,12 @@ def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar
 
         mapping[event["id"]] = created_event["id"]
 
-    with open(f"mapping/{name}.json") as f:
-        json.dump(mapping, f)
+    write_file(f"{name}_events", mapping)
 
 def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: Calendar, name: str, update_sync_tokens: bool):
     if not isinstance(calendars, list): calendars = [calendars]
 
-    try:
-        with open(f"sync_tokens/{name}_event_tokens.json", "r") as f:
-            sync_tokens = json.load(f)
-    except FileNotFoundError:
-        sync_tokens = {}
+    sync_tokens = read_file(f"{name}_event_tokens")
 
     events = []
     logger.info("Starting to get updated events")
@@ -167,8 +153,7 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                 else:
                     raise
 
-    if update_sync_tokens: 
-        with open(f"sync_tokens/{name}_event_tokens.json", "w") as f: json.dump(sync_tokens, f)
+    if update_sync_tokens: write_file(f"{name}_event_tokens", sync_tokens)
 
     logger.info("Finished fetching events")
 
@@ -199,18 +184,17 @@ def init_sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name
         logging.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]} - {event["organizer"].get("displayName", "")}")
 
         mapping[event["id"]] = created_event["id"]
+
     logging.info("Finished syncing events")
 
-    with open(f"mapping/{name}.json", "w") as f:
-        json.dump(mapping, f)
+    write_file(f"{name}_events", mapping)
 
 def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str) -> None:
     sync_from_events = get_updated_events(service, sync_from, sync_to, name, update_sync_tokens=True)
     logger.info(f"Found {len(sync_from_events)} events to sync")
     if len(sync_from_events) == 0: return
 
-    with open(f"mapping/{name}.json", "r") as f:
-        mapping = json.load(f)
+    mapping = read_file(f"{name}_events")
     stored_sync_from_ids = set(mapping.keys())
 
     for i, event in enumerate(sync_from_events):
@@ -259,8 +243,8 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                 logger.info(f"[{i + 1}/{len(sync_from_events)}]: Sync From Event Canceled - Skipping (Not in sync to)")
 
     logger.info("Finished syncing events")
-    with open(f"mapping/{name}.json", "w") as f:
-        json.dump(mapping, f)
+
+    write_file(f"{name}_events", mapping)
 
 def is_future_task(task):
     now = datetime.now(tz=PHX).isoformat()
@@ -270,11 +254,7 @@ def is_future_task(task):
     return True if due_time >= day else False
 
 def get_tasks(service, update_sync_time: bool):
-    try:
-        with open("sync_tokens/tasks_sync_time.json", "r") as f:
-            tasks_time = json.load(f)
-    except FileNotFoundError:
-        tasks_time = {}
+    tasks_time = read_file("tasks_sync_time")
 
     tasks = []
     page_token = None
@@ -299,20 +279,14 @@ def get_tasks(service, update_sync_time: bool):
 
     logger.info("Finished fetching tasks")
 
-    if update_sync_time:
-        with open("sync_tokens/tasks_sync_time.json", "w") as f:
-            json.dump(tasks_time, f)
+    if update_sync_time: write_file("tasks_sync_time", tasks_time)
 
     future_tasks = [task for task in tasks if is_future_task(task)]
     logging.info(f"Filtered {len(tasks)} tasks down to {len(future_tasks)} future tasks")
     return future_tasks
 
 def get_updated_tasks(tasks_service, update_sync_time: bool):
-    try:
-        with open("sync_tokens/tasks_sync_time.json", "r") as f:
-            tasks_time = json.load(f)
-    except FileNotFoundError:
-        tasks_time = {}
+    tasks_time = read_file("tasks_sync_time")
 
     tasks = []
     logger.info("Starting to get updated tasks")
@@ -337,8 +311,7 @@ def get_updated_tasks(tasks_service, update_sync_time: bool):
             if update_sync_time: tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
             break
 
-    if update_sync_time:
-        with open("sync_tokens/tasks_sync_time.json", "w") as f: json.dump(tasks_time, f)
+    write_file("tasks_sync_time", tasks_time)
 
     logger.info("Finished fetching tasks")
 
@@ -388,10 +361,8 @@ def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
         
     logging.info("Finished syncing tasks")
 
-    with open("mapping/days_events.json", "w") as f:
-        json.dump(day_event_mapping, f)
-    with open("mapping/tasks_events.json", "w") as f:
-        json.dump(task_event_mapping, f)
+    write_file("days_events", day_event_mapping)
+    write_file("tasks_events", task_event_mapping)
 
 def get_event(service, event_id: str, cal: Calendar):
     return service.events().get(
@@ -423,12 +394,10 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
     logger.info(f"Found {len(tasks)} tasks to sync")
     if len(tasks) == 0: return
 
-    with open("mapping/days_events.json", "r") as f:
-        days_events = json.load(f)
+    days_events = read_file("days_events")
     stored_days = set(days_events.keys())
 
-    with open("mapping/tasks_events.json", "r") as f:
-        tasks_events = json.load(f)
+    tasks_events = read_file("tasks_events")
     stored_tasks = set(tasks_events.keys())
 
     for i, task in enumerate(tasks):
@@ -495,11 +464,8 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
             
     logger.info("Finished syncing tasks")
     
-    with open("mapping/days_events.json", "w") as f:
-        json.dump(days_events, f)
-
-    with open(f"mapping/tasks_events.json", "w") as f:
-        json.dump(tasks_events, f) 
+    write_file("days_events", days_events)
+    write_file("tasks_events", tasks_events)
 
 def clear_sync_to_calendar(name: str, service, calendar: Calendar):
     logging.info(f"Clearing calendar {calendar.name}")
@@ -519,13 +485,11 @@ def clear_sync_to_calendar(name: str, service, calendar: Calendar):
 
     logging.info("Finished clearing events")
 
-    if os.path.exists(f"mapping/{name}.json"): 
-        os.remove(f"mapping/{name}.json")
-        logging.info("Removing mapping")
+    write_file(f"{name}_events", {})
+    logging.info("Removing mapping")
 
-    if os.path.exists(f"sync_tokens/{name}_event_tokens.json"):
-        os.remove(f"sync_tokens/{name}_event_tokens.json")
-        logging.info(f"Removed {name} event sync tokens")
+    write_file(f"{name}_event_tokens", {})
+    logging.info(f"Removed {name} event sync tokens")
 
 def clear_todo_events(service, calendar: Calendar):
     logging.info(f"Clearing TODO events in {calendar.name}")
@@ -543,14 +507,11 @@ def clear_todo_events(service, calendar: Calendar):
 
     logging.info("Finished clearing events")
 
-    if os.path.exists("sync_tokens/tasks_sync_time.json"):
-        os.remove("sync_tokens/tasks_sync_time.json")
-        logging.info("Removing tasks sync time")
+    write_file("tasks_sync_time", {})
+    logging.info("Removing tasks sync time")
 
-    if os.path.exists("mapping/days_events.json"): 
-        os.remove("mapping/days_events.json")
-        logging.info("Removing days events mapping")
-    
-    if os.path.exists("mapping/tasks_events.json"):
-        os.remove("mapping/tasks_events.json")
-        logging.info("Removing tasks events mapping")
+    write_file("days_events", {})
+    logging.info("Removing days events mapping")
+
+    write_file("tasks_events", {})
+    logging.info("Removing tasks events mapping")
