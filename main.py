@@ -117,10 +117,11 @@ def main():
     
     update_local_files(client=client)
 
-    journey()
-    mollee()
-
-    update_cloud_files(client=client)
+    try:
+        journey()
+        mollee()
+    finally:
+        update_cloud_files(client=client)
 
 if __name__ == "__main__":
     main()
