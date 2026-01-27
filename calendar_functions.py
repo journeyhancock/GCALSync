@@ -7,8 +7,8 @@ from collections import defaultdict
 from datetime import datetime, time
 from dateutil.parser import isoparse
 from googleapiclient.errors import HttpError
-from typing import List, Set
-from util import Calendar, read_file, write_file
+from typing import List, Set, Tuple, Any, Dict
+from util import Calendar, read_file, write_file, GetEventsResult, GetTasksResult
 from zoneinfo import ZoneInfo
 
 PHX = ZoneInfo("America/Phoenix")
@@ -43,7 +43,7 @@ def is_future_event(event):
         time.min, 
         tzinfo=PHX)
 
-def get_events(service, calendars: Calendar | List[Calendar], name: str, update_sync_tokens: bool):
+def get_events(service, calendars: Calendar | List[Calendar], name: str) -> GetEventsResult:
     if not isinstance(calendars, list): calendars = [calendars]
 
     sync_tokens = read_file(f"{name}_event_tokens")
@@ -67,54 +67,63 @@ def get_events(service, calendars: Calendar | List[Calendar], name: str, update_
             page_token = events_result.get("nextPageToken")
             if not page_token: 
                 sync_token = events_result.get("nextSyncToken")
-                if update_sync_tokens and sync_token: sync_tokens[cal.id] = sync_token
+                if sync_token: sync_tokens[cal.id] = sync_token
                 break
 
     logger.info("Finished fetching events")
 
-    if update_sync_tokens: write_file(f"{name}_event_tokens", sync_tokens)
-
     future_events = [event for event in events if is_future_event(event)]
     logging.info(f"Filtered {len(events)} events down to {len(future_events)} future events")
-    return future_events
+    return GetEventsResult(sync_tokens, future_events)
 
 def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar, name: str):
-    events = get_events(service, cal, name, update_sync_tokens=True)
+    get_events_result: GetEventsResult = get_events(service, cal, name)
+    events = get_events_result.events
 
     mapping = read_file(f"{name}_events")
 
-    for i, event in enumerate(events):
-        event_id = event["id"]
+    try:
+        for i, event in enumerate(events):
+            event_id = event["id"]
 
-        if event_id in mapping: 
-            try:
-                delete_event(service, sync_to, mapping[event_id])
-            except HttpError:
-                pass
-            mapping.pop(event_id)
+            if event_id in mapping: 
+                try:
+                    delete_event(service, sync_to, mapping[event_id])
+                except HttpError:
+                    pass
+                mapping.pop(event_id)
 
-        new_event = {
-            "summary": event["summary"],
-            "start": event["start"],
-            "end": event["end"],
-            "description": event.get("description", "")
-        }
+            new_event = {
+                "summary": event["summary"],
+                "start": event["start"],
+                "end": event["end"],
+                "description": event.get("description", "")
+            }
 
-        if name == "mollee" and event["summary"] == "Journey anni <3":
-            logging.info(f"[{i + 1}/{len(events)}] Skipping (anni)")
-            continue
+            if name == "mollee" and event["summary"] == "Journey anni <3":
+                logging.info(f"[{i + 1}/{len(events)}] Skipping (anni)")
+                continue
 
-        created_event = service.events().insert(
-            calendarId=sync_to.id,
-            body=new_event
-        ).execute()
-        logging.info(f"[{i + 1}/{len(events)}] {event["summary"]} - {event["organizer"].get("displayName", "")}")
+            created_event = service.events().insert(
+                calendarId=sync_to.id,
+                body=new_event
+            ).execute()
+            logging.info(f"[{i + 1}/{len(events)}] {event["summary"]} - {event["organizer"].get("displayName", "")}")
 
-        mapping[event["id"]] = created_event["id"]
+            mapping[event["id"]] = created_event["id"]
 
-    write_file(f"{name}_events", mapping)
+        logging.info("Finished reinitiating calendar")
+        write_file(f"{name}_events", mapping)
 
-def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: Calendar, name: str, update_sync_tokens: bool):
+        sync_tokens = get_events_result.sync_tokens
+        write_file(f"{name}_event_tokens", sync_tokens)
+        logging.info("Updated Sync Tokens")
+    
+    except Exception as e:
+        logging.warning(f"Failed during reinitiating calendar: {e}")
+        write_file(f"{name}_events", mapping)
+
+def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: Calendar, name: str) -> GetEventsResult:
     if not isinstance(calendars, list): calendars = [calendars]
 
     sync_tokens = read_file(f"{name}_event_tokens")
@@ -143,7 +152,7 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                 page_token = events_result.get("nextPageToken")
                 if not page_token: 
                     sync_token = events_result.get("nextSyncToken")
-                    if update_sync_tokens and sync_token: sync_tokens[cal.id] = sync_token
+                    if sync_token: sync_tokens[cal.id] = sync_token
                     break
 
             except HttpError as e:
@@ -153,98 +162,126 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                 else:
                     raise
 
-    if update_sync_tokens: write_file(f"{name}_event_tokens", sync_tokens)
-
     logger.info("Finished fetching events")
 
-    return events
+    return GetEventsResult(sync_tokens, events)
 
 def init_sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str) -> None:
-    sync_from_events = get_events(service, sync_from, name, update_sync_tokens=True)
+    get_events_result: GetEventsResult = get_events(service, sync_from, name)
+    sync_from_events = get_events_result.events
     logging.info(f"Fetched {len(sync_from_events)} sync from events")
 
     mapping = {}
     logging.info("Creating sync to events")
-    for i, event in enumerate(sync_from_events):
-        new_event = {
-            "summary": event["summary"],
-            "start": event["start"],
-            "end": event["end"],
-            "description": event.get("description", "")
-        }
 
-        if name == "mollee" and event["summary"] == "Journey anni <3":
-            logging.info(f"[{i + 1}/{len(sync_from_events)}] Skipping (anni)")
-            continue
+    try:
+        for i, event in enumerate(sync_from_events):
+            new_event = {
+                "summary": event["summary"],
+                "start": event["start"],
+                "end": event["end"],
+                "description": event.get("description", "")
+            }
 
-        created_event = service.events().insert(
-            calendarId=sync_to.id,
-            body=new_event
-        ).execute()
-        logging.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]} - {event["organizer"].get("displayName", "")}")
+            if name == "mollee" and event["summary"] == "Journey anni <3":
+                logging.info(f"[{i + 1}/{len(sync_from_events)}] Skipping (anni)")
+                continue
 
-        mapping[event["id"]] = created_event["id"]
+            created_event = service.events().insert(
+                calendarId=sync_to.id,
+                body=new_event
+            ).execute()
+            logging.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]} - {event["organizer"].get("displayName", "")}")
 
-    logging.info("Finished syncing events")
+            mapping[event["id"]] = created_event["id"]
 
-    write_file(f"{name}_events", mapping)
+        logging.info("Finished syncing events")
+        write_file(f"{name}_events", mapping)
+
+        sync_tokens = get_events_result.sync_tokens
+        write_file(f"{name}_event_tokens", sync_tokens)
+        logging.info("Updated Sync Tokens")
+
+    except Exception as e:
+        logging.warning(f"Failed during syncing events: {e}")
+        write_file(f"{name}_events", mapping)
 
 def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str) -> None:
-    sync_from_events = get_updated_events(service, sync_from, sync_to, name, update_sync_tokens=True)
+    get_events_result: GetEventsResult = get_updated_events(service, sync_from, sync_to, name)
+    sync_from_events = get_events_result.events
     logger.info(f"Found {len(sync_from_events)} events to sync")
     if len(sync_from_events) == 0: return
 
     mapping = read_file(f"{name}_events")
     stored_sync_from_ids = set(mapping.keys())
 
-    for i, event in enumerate(sync_from_events):
-        event_id = event["id"]
-        if event_id in stored_sync_from_ids:
-            sync_to_event_id = mapping[event_id]
+    try:
+        for i, event in enumerate(sync_from_events):
+            event_id = event["id"]
+            if event_id in stored_sync_from_ids:
+                sync_to_event_id = mapping[event_id]
 
-            if event["status"] == "cancelled":
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event")
-                
-                delete_event(service, sync_to, mapping[event_id])
-                mapping.pop(event_id)
+                if event["status"] == "cancelled":
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event")
+                    
+                    delete_event(service, sync_to, mapping[event_id])
+                    mapping.pop(event_id)
+                else:
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event")
+
+                    start = event.get("start")
+                    if start is None: 
+                        logger.info(f"    Event has invalid start time - skipping")
+                        continue
+                    
+                    end = event.get("end")
+                    if end is None:
+                        logger.info(f"    Event has invalid end time - skipping")
+                        continue
+
+                    
+                    updated_info = {
+                        "summary": event["summary"],
+                        "start": start,
+                        "end": end,
+                        "description": event.get("description", "")
+                    }
+
+                    updated_event = service.events().patch(
+                        calendarId=sync_to.id,
+                        eventId=sync_to_event_id,
+                        body=updated_info
+                    ).execute()
             else:
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event")
+                if event["status"] != "cancelled":
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event")
 
-                updated_info = {
-                    "summary": event["summary"],
-                    "start": event["start"],
-                    "end": event["end"],
-                    "description": event.get("description", "")
-                }
+                    new_event = {
+                        "summary": event["summary"],
+                        "start": event["start"],
+                        "end": event["end"],
+                        "description": event.get("description", "")
+                    }
 
-                updated_event = service.events().patch(
-                    calendarId=sync_to.id,
-                    eventId=sync_to_event_id,
-                    body=updated_info
-                ).execute()
-        else:
-            if event["status"] != "cancelled":
-                logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event")
+                    created_event = service.events().insert(
+                        calendarId=sync_to.id,
+                        body=new_event
+                    ).execute()
 
-                new_event = {
-                    "summary": event["summary"],
-                    "start": event["start"],
-                    "end": event["end"],
-                    "description": event.get("description", "")
-                }
+                    mapping[event_id] = created_event["id"]
+                else:
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}]: Sync From Event Canceled - Skipping (Not in sync to)")
 
-                created_event = service.events().insert(
-                    calendarId=sync_to.id,
-                    body=new_event
-                ).execute()
+        logger.info("Finished syncing events")
+        write_file(f"{name}_events", mapping)
 
-                mapping[event_id] = created_event["id"]
-            else:
-                logger.info(f"[{i + 1}/{len(sync_from_events)}]: Sync From Event Canceled - Skipping (Not in sync to)")
+        sync_tokens = get_events_result.sync_tokens
+        write_file(f"{name}_event_tokens", sync_tokens)
+        logging.info("Updated Sync Tokens")
 
-    logger.info("Finished syncing events")
-
-    write_file(f"{name}_events", mapping)
+    except Exception as e:
+        logging.warning(f"Failed during syncing events: {e}")
+        write_file(f"{name}_events", mapping)
 
 def is_future_task(task):
     now = datetime.now(tz=PHX).isoformat()
@@ -253,7 +290,7 @@ def is_future_task(task):
     due_time = task["due"]
     return True if due_time >= day else False
 
-def get_tasks(service, update_sync_time: bool):
+def get_tasks(service) -> GetTasksResult:
     tasks_time = read_file("tasks_sync_time")
 
     tasks = []
@@ -274,18 +311,16 @@ def get_tasks(service, update_sync_time: bool):
 
         page_token = tasks_result.get("nextPageToken")
         if not page_token: 
-            if update_sync_time: tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
+            tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
             break
 
     logger.info("Finished fetching tasks")
 
-    if update_sync_time: write_file("tasks_sync_time", tasks_time)
-
     future_tasks = [task for task in tasks if is_future_task(task)]
     logging.info(f"Filtered {len(tasks)} tasks down to {len(future_tasks)} future tasks")
-    return future_tasks
+    return GetTasksResult(tasks_time["tasks"], future_tasks)
 
-def get_updated_tasks(tasks_service, update_sync_time: bool):
+def get_updated_tasks(tasks_service) -> GetTasksResult:
     tasks_time = read_file("tasks_sync_time")
 
     tasks = []
@@ -308,20 +343,19 @@ def get_updated_tasks(tasks_service, update_sync_time: bool):
 
         page_token = tasks_result.get("nextPageToken")
         if not page_token:
-            if update_sync_time: tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
+            tasks_time["tasks"] = datetime.now(tz=PHX).isoformat()
             break
-
-    write_file("tasks_sync_time", tasks_time)
 
     logger.info("Finished fetching tasks")
 
-    return tasks
+    return GetTasksResult(tasks_time["tasks"], tasks)
 
 def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
     now = datetime.now(tz=PHX).isoformat()
     day = now[:11] + "00:00:00.000Z"
 
-    tasks = get_tasks(tasks_service, update_sync_time=True)
+    get_tasks_result: GetTasksResult = get_tasks(tasks_service)
+    tasks = get_tasks_result.tasks
 
     # Sort tasks by their day
     sorted_tasks = defaultdict(list)
@@ -331,38 +365,47 @@ def init_sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
         sorted_tasks[due_time[:11] + "00:00:00.000Z"].append(task)
         logging.info(f"[{i + 1}/{len(tasks)}] {task["title"]} in day {due_time[:11]}")
     
-    logging.info(f"Creating events for {sum(len(task_list) for task_list in sorted_tasks.values())}")
     day_event_mapping = {}
     task_event_mapping = {}
-    for i, (day, task_list) in enumerate(sorted_tasks.items()):
-        formatted_task_list = []
-        for task in task_list:
-            if task["status"] == "completed":
-                formatted_task_list.append(f"\u2705 {task["title"]}")
-            else:
-                formatted_task_list.append(f"\u274C {task["title"]}")
-        new_task_list = "\n".join(formatted_task_list)
+    try:
+        logging.info(f"Creating events for {sum(len(task_list) for task_list in sorted_tasks.values())} tasks")
+        for i, (day, task_list) in enumerate(sorted_tasks.items()):
+            formatted_task_list = []
+            for task in task_list:
+                if task["status"] == "completed":
+                    formatted_task_list.append(f"\u2705 {task["title"]}")
+                else:
+                    formatted_task_list.append(f"\u274C {task["title"]}")
+            new_task_list = "\n".join(formatted_task_list)
 
-        new_event = {
-            "summary": "TODO",
-            "start": {"dateTime": day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
-            "end": {"dateTime": day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
-            "description": new_task_list
-        }
+            new_event = {
+                "summary": "TODO",
+                "start": {"dateTime": day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
+                "end": {"dateTime": day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
+                "description": new_task_list
+            }
 
-        created_event = cal_service.events().insert(
-            calendarId=sync_to.id,
-            body=new_event
-        ).execute()
-        logging.info(f"Day [{i + 1}/{len(sorted_tasks.keys())}] added tasks\n{new_task_list}")
-        
-        day_event_mapping[day] = created_event["id"]
-        for task in task_list: task_event_mapping[task["id"]] = created_event["id"]
-        
-    logging.info("Finished syncing tasks")
+            created_event = cal_service.events().insert(
+                calendarId=sync_to.id,
+                body=new_event
+            ).execute()
+            logging.info(f"Day [{i + 1}/{len(sorted_tasks.keys())}] added tasks\n{new_task_list}")
+            
+            day_event_mapping[day] = created_event["id"]
+            for task in task_list: task_event_mapping[task["id"]] = created_event["id"]
+            
+        logging.info("Finished syncing tasks")
+        write_file("days_events", day_event_mapping)
+        write_file("tasks_events", task_event_mapping)
 
-    write_file("days_events", day_event_mapping)
-    write_file("tasks_events", task_event_mapping)
+        sync_time = get_tasks_result.sync_time
+        write_file("tasks_sync_time", {"tasks": sync_time})
+        logging.info("Updated Sync Tokens")
+
+    except Exception as e:
+        logging.warning(f"Failed during syncing tasks: {e}")
+        write_file("days_events", day_event_mapping)
+        write_file("tasks_events", task_event_mapping)
 
 def get_event(service, event_id: str, cal: Calendar):
     return service.events().get(
@@ -390,7 +433,8 @@ def remove_task(cal_service, sync_to: Calendar, event, task):
     ).execute()
 
 def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
-    tasks = get_updated_tasks(tasks_service, update_sync_time=True)
+    get_tasks_result: GetTasksResult = get_updated_tasks(tasks_service)
+    tasks = get_tasks_result.tasks
     logger.info(f"Found {len(tasks)} tasks to sync")
     if len(tasks) == 0: return
 
@@ -400,77 +444,86 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
     tasks_events = read_file("tasks_events")
     stored_tasks = set(tasks_events.keys())
 
-    for i, task in enumerate(tasks):
-        day = task["due"][:11] + "00:00:00.000Z"
-        if day in stored_days:
-            event_id = days_events[day]
+    try:
+        for i, task in enumerate(tasks):
+            day = task["due"][:11] + "00:00:00.000Z"
+            if day in stored_days:
+                event_id = days_events[day]
 
-            if task.get("deleted"):
-                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Deleted - Removing from TODO event")
+                if task.get("deleted"):
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Deleted - Removing from TODO event")
 
-                event = get_event(cal_service, event_id, sync_to)
-                remove_task(cal_service, sync_to, event, task)
-                tasks_events.pop(task["id"])
+                    event = get_event(cal_service, event_id, sync_to)
+                    remove_task(cal_service, sync_to, event, task)
+                    tasks_events.pop(task["id"])
+                else:
+                    task_id = task["id"]
+                    if task_id in stored_tasks:
+                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in existing TODO event")
+
+                        old_event_id = tasks_events[task_id]
+                        old_event = cal_service.events().get(
+                            calendarId=sync_to.id,
+                            eventId=old_event_id
+                        ).execute()
+                        remove_task(cal_service, sync_to, old_event, task)
+                    else:
+                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event")
+
+                    event = get_event(cal_service, event_id, sync_to)
+                    todo_list = event.get("description", "")
+
+                    new_todo_list = todo_list + f"\n{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
+                    updated_event = cal_service.events().patch(
+                        calendarId=sync_to.id,
+                        eventId=days_events[day],
+                        body={"description": new_todo_list}
+                    ).execute()
+                        
+                    tasks_events[task_id] = event_id
             else:
                 task_id = task["id"]
                 if task_id in stored_tasks:
-                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in existing TODO event")
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in new TODO event")
 
-                    old_event_id = tasks_events[task_id]
-                    old_event = cal_service.events().get(
-                        calendarId=sync_to.id,
-                        eventId=old_event_id
-                    ).execute()
+                    old_event_id = tasks_events[task["id"]]
+                    old_event = get_event(cal_service, old_event_id, sync_to)
                     remove_task(cal_service, sync_to, old_event, task)
                 else:
-                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event")
-
-                event = get_event(cal_service, event_id, sync_to)
-                todo_list = event.get("description", "")
-
-                new_todo_list = todo_list + f"\n{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
-                updated_event = cal_service.events().patch(
-                    calendarId=sync_to.id,
-                    eventId=days_events[day],
-                    body={"description": new_todo_list}
-                ).execute()
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in new TODO event")
                     
-                tasks_events[task_id] = event_id
-        else:
-            task_id = task["id"]
-            if task_id in stored_tasks:
-                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in new TODO event")
+                new_event = {
+                    "summary": "TODO",
+                    "start": {"dateTime": day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
+                    "end": {"dateTime": day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
+                    "description": f"{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
+                }
 
-                old_event_id = tasks_events[task["id"]]
-                old_event = get_event(cal_service, old_event_id, sync_to)
-                remove_task(cal_service, sync_to, old_event, task)
-            else:
-                logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in new TODO event")
+                created_event = cal_service.events().insert(
+                    calendarId=sync_to.id,
+                    body=new_event
+                ).execute()
                 
-            new_event = {
-                "summary": "TODO",
-                "start": {"dateTime": day[:11] + "06:00:00.000", "timeZone" : "America/Phoenix"},
-                "end": {"dateTime": day[:11] + "06:30:00.000", "timeZone" : "America/Phoenix"},
-                "description": f"{"\u2705" if task["status"] == "completed" else "\u274C"} {task["title"]}"
-            }
+                days_events[day] = created_event["id"]
+                tasks_events[task_id] = created_event["id"]
+                
+        logger.info("Finished syncing tasks")
+        write_file("days_events", days_events)
+        write_file("tasks_events", tasks_events)
 
-            created_event = cal_service.events().insert(
-                calendarId=sync_to.id,
-                body=new_event
-            ).execute()
-            
-            days_events[day] = created_event["id"]
-            tasks_events[task_id] = created_event["id"]
-            
-    logger.info("Finished syncing tasks")
-    
-    write_file("days_events", days_events)
-    write_file("tasks_events", tasks_events)
+        sync_time = get_tasks_result.sync_time
+        write_file("tasks_sync_time", {"tasks": sync_time})
+        logging.info("Updated Sync Tokens")
+
+    except Exception as e:
+        logging.warning(f"Failed during syncing tasks: {e}")
+        write_file("days_events", days_events)
+        write_file("tasks_events", tasks_events)
 
 def clear_sync_to_calendar(name: str, service, calendar: Calendar):
     logging.info(f"Clearing calendar {calendar.name}")
     
-    events = get_events(service, calendar, name, update_sync_tokens=False)
+    events = get_events(service, calendar, name).events
     logging.info(f"Clearing {len(events)} events")
     
     for i, event in enumerate(events):
@@ -494,7 +547,7 @@ def clear_sync_to_calendar(name: str, service, calendar: Calendar):
 def clear_todo_events(service, calendar: Calendar):
     logging.info(f"Clearing TODO events in {calendar.name}")
     
-    events = get_events(service, calendar, "journey", update_sync_tokens=False)
+    events = get_events(service, calendar, "journey").events
     for i, event in enumerate(events):
         if event["summary"] == "TODO": 
             service.events().delete(

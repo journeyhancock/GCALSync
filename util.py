@@ -1,7 +1,17 @@
 import json
 
 from dataclasses import dataclass, field
-from typing import List, Dict
+from typing import List, Dict, Any
+
+@dataclass
+class GetEventsResult:
+    sync_tokens: Dict[str, str]
+    events: List[Any]
+
+@dataclass
+class GetTasksResult:
+    sync_time: str
+    tasks: List[Any]
 
 @dataclass
 class Calendar:
