@@ -247,11 +247,15 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                         "description": event.get("description", "")
                     }
 
-                    updated_event = service.events().patch(
-                        calendarId=sync_to.id,
-                        eventId=sync_to_event_id,
-                        body=updated_info
-                    ).execute()
+                    try:
+                        updated_event = service.events().patch(
+                            calendarId=sync_to.id,
+                            eventId=sync_to_event_id,
+                            body=updated_info
+                        ).execute()
+                    except HttpError as http_error:
+                        if http_error.status_code == 400:
+                            logging.warning(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Failed to Update Sync To Event {http_error}")
             else:
                 if event["status"] != "cancelled":
                     logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event")
