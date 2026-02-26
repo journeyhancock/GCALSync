@@ -54,6 +54,13 @@ def update_local_files(client: storage.Client):
     write_file("tasks_sync_time", download_file(client, "tasks_sync_time.json"))
     logging.info("Downloaded task sync time")
 
+    # credentials
+    write_file("journey_creds", download_file(client, "journey_creds.json"), path="tokens/")
+    logging.info("Downloaded Journey credentials")
+
+    write_file("mollee_creds", download_file(client, "mollee_creds.json"), path="tokens/")
+    logging.info("Downloaded Mollee credentials")
+
 def update_cloud_files(client: storage.Client):
     # mappings
     upload_file(client, "journey_events.json", read_file("journey_events"))
@@ -77,3 +84,10 @@ def update_cloud_files(client: storage.Client):
 
     upload_file(client, "tasks_sync_time.json", read_file("tasks_sync_time"))
     logging.info("Uploaded tasks sync time")
+
+    # credentials
+    upload_file(client, "journey_creds.json", read_file("journey_creds", path="tokens/"))
+    logging.info("Uploaded Journey credentials")
+
+    upload_file(client, "mollee_creds.json", read_file("mollee_creds", path="tokens/"))
+    logging.info("Uploaded Mollee credentials")

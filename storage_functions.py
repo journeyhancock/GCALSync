@@ -10,7 +10,7 @@ PHX = ZoneInfo("America/Phoenix")
 logger = logging.getLogger(__name__)
 
 def prune_calendar(service, sync_to: Calendar, name: str):
-    mapping = read_file(f"mapping/{name}.json")
+    mapping = read_file(name)
 
     logger.info(f"Pruning {name} Sync To")
     to_remove = []
@@ -25,7 +25,7 @@ def prune_calendar(service, sync_to: Calendar, name: str):
     for event_id in to_remove: mapping.pop(event_id)
     logger.info(f"Pruned {len(to_remove)} {name} event mappings")
 
-    write_file(f"mapping/{name}.json", mapping)
+    write_file(name, mapping)
 
     logger.info("Finished pruning")
 
@@ -33,8 +33,8 @@ def prune_tasks(service):
     now = datetime.now(tz=PHX).isoformat()
     day = now[:11] + "00:00:00.000Z"
 
-    days_events = read_file("mapping/days_events.json")
-    tasks_events = read_file("mapping/tasks_events.json")
+    days_events = read_file("days_events")
+    tasks_events = read_file("tasks_events")
 
     logger.info("Pruning Tasks")
     to_remove = []
@@ -59,7 +59,7 @@ def prune_tasks(service):
     for task_id in to_remove: tasks_events.pop(task_id)
     logger.info(f"Pruned {len(to_remove)} task:event mappings")
 
-    write_file("mapping/days_events.json", days_events)
-    write_file("mapping/tasks_events.json", tasks_events)
+    write_file("days_events.json", days_events)
+    write_file("tasks_events.json", tasks_events)
 
     logger.info("Finished pruning")
