@@ -485,6 +485,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                     ).execute()
                         
                     tasks_events[task_id] = event_id
+                    stored_tasks = set(tasks_events.keys())
             else:
                 task_id = task["id"]
                 if task_id in stored_tasks:
@@ -509,7 +510,10 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                 ).execute()
                 
                 days_events[day] = created_event["id"]
+                stored_days = set(days_events.keys())
+
                 tasks_events[task_id] = created_event["id"]
+                stored_tasks = set(tasks_events.keys())
     
         except Exception as e:
             name = task.get("title")
