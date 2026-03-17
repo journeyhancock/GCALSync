@@ -2,8 +2,11 @@ import json
 import os
 
 from dataclasses import dataclass
+from gcloud_storage import upload_file
+from util import read_file
 from google.auth.credentials import Credentials as AuthCredentials
 from google.auth.transport.requests import Request
+from google.cloud import storage
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import InstalledAppFlow
 
@@ -17,10 +20,15 @@ class Creds:
     mollee_creds: Credentials | AuthCredentials
 
 def ensure_valid(creds: Credentials, name: str):
-    if creds.expired and creds.refresh_token:
+    if not creds.refresh_token:
+        return get_refresh_token(name=name)
+    
+    if creds.expired:
         creds.refresh(Request())
         with open(f"tokens/{name}_creds.json", "w") as f:
             f.write(creds.to_json())
+        
+    return creds
 
 def get_refresh_token(name: str):
     client_secret = "tokens/client_secret.json"
@@ -43,18 +51,20 @@ def get_refresh_token(name: str):
 
     return creds
 
-def get_credentials():
+def get_credentials(client: storage.Client):
     if not os.path.exists("tokens/journey_creds.json"):
         journey_creds = get_refresh_token("journey")
+        upload_file(client, "journey_creds.json", read_file("journey_creds", path="tokens/"))
     else:
         journey_creds = Credentials.from_authorized_user_file(
             "tokens/journey_creds.json",
             SCOPES
         )
-        ensure_valid(journey_creds, "journey")
+        journey_creds = ensure_valid(journey_creds, "journey")
 
     if not os.path.exists("tokens/mollee_creds.json"):
         mollee_creds = get_refresh_token("mollee")
+        upload_file(client, "mollee_creds.json", read_file("mollee_creds", path="tokens/"))
     else:
         mollee_creds = Credentials.from_authorized_user_file(
             "tokens/mollee_creds.json",

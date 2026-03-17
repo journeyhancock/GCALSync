@@ -32,8 +32,9 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Fetch or create credentials if necessary
+client = storage.Client(project="quiet-engine-471620-s7")
 logger.info("Fetching credentials")
-creds = get_credentials()
+creds = get_credentials(client=client)
 
 def journey():
     logger.info("-- Journey --")
@@ -111,10 +112,6 @@ def mollee():
         prune_calendar(cal_service, cal_ids.sync_to, "mollee")
 
 def main():
-    client = storage.Client(
-        project="quiet-engine-471620-s7",
-        credentials=creds.journey_creds)
-    
     update_local_files(client=client)
 
     try:
