@@ -8,7 +8,7 @@ from datetime import datetime, time
 from dateutil.parser import isoparse
 from googleapiclient.errors import HttpError
 from typing import List, Set, Tuple, Any, Dict
-from util import Calendar, read_file, write_file, GetEventsResult, GetTasksResult
+from util import Calendar, read_file, write_file, GetEventsResult, GetTasksResult, skip_event
 from zoneinfo import ZoneInfo
 
 PHX = ZoneInfo("America/Phoenix")
@@ -100,8 +100,8 @@ def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar
                 "description": event.get("description", "")
             }
 
-            if name == "mollee" and event["summary"] == "Journey anni <3":
-                logging.info(f"[{i + 1}/{len(events)}] Skipping (anni)")
+            if skip_event(cal.name, new_event["summary"]): 
+                logging.log
                 continue
 
             created_event = service.events().insert(
@@ -159,6 +159,8 @@ def get_updated_events(service, calendars: Calendar | List[Calendar], sync_to: C
                 if e.resp.status == 410:
                     logger.warning(f"Sync token expired for {cal.name}")
                     reinit_expired_calendar_sync_token(service, cal, sync_to, name)
+                    sync_tokens = read_file(f"{name}_event_tokens")
+                    sync_token = sync_tokens.get(cal.id)
                 else:
                     raise
 
@@ -183,8 +185,8 @@ def init_sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name
                 "description": event.get("description", "")
             }
 
-            if name == "mollee" and event["summary"] == "Journey anni <3":
-                logging.info(f"[{i + 1}/{len(sync_from_events)}] Skipping (anni)")
+            if skip_event(name, event["summary"]): 
+                logging.info(f"[{i + 1}/{len(sync_from_events)}] Skipping {event["summary"]}")
                 continue
 
             created_event = service.events().insert(

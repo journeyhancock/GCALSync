@@ -34,3 +34,11 @@ def read_file(file_name: str, path="storage/"):
 def write_file(file_name: str, data: Dict[str, str], path="storage/"):
     with open(f"{path}{file_name}.json", "w") as f:
         json.dump(data, f)
+
+def skip_event(cal_name: str, event_summary: str):
+    EVENTS_TO_SKIP = {
+        "mollee": ["Journey anni <3"],
+        "journey": ["Pay Rent", "Off Friday"]
+    }
+
+    return event_summary in EVENTS_TO_SKIP[cal_name]
