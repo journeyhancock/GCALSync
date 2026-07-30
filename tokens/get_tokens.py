@@ -42,6 +42,8 @@ def get_refresh_token(name: str, client: storage.Client):
     client_secret = "tokens/client_secret.json"
 
     flow = InstalledAppFlow.from_client_secrets_file(str(client_secret), SCOPES)
+    
+    print(f"Please login to the Google Account for {name}")
     creds = flow.run_local_server(
         port=0, 
         open_browser=False,

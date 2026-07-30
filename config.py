@@ -10,7 +10,7 @@ class JourneyConfig:
 
 @dataclass(frozen=True)
 class MolleeConfig:
-    sync_from: tuple[str, ...] = ("ca", "wclax '25-'26", "wclax '25-'26 eboard", "classes", "mjkahan3@gmail.com", "mjkahan@asu.edu")
+    sync_from: tuple[str, ...] = ("ca", "wclax eboard 26-27", "classes", "mjkahan3@gmail.com", "mjkahan@asu.edu")
     sync_to: str = "mollee :)"
 
 def get_cal_ids(service, name: str) -> CalIds:
@@ -18,7 +18,7 @@ def get_cal_ids(service, name: str) -> CalIds:
     ids = CalIds()
 
     try:
-        calendars = service.calendarList().list().execute()
+        calendars = service.calendarList().list(showHidden=True).execute()
         for calendar in calendars["items"]:
             calendar_name = calendar["summary"]
             if calendar_name.lower() in config.sync_from:

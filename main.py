@@ -116,7 +116,7 @@ def main():
 
     try:
         journey()
-        # mollee()
+        mollee()
     finally:
         update_cloud_files(client=client)
 

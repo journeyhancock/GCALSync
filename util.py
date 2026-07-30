@@ -3,6 +3,11 @@ import json
 from dataclasses import dataclass, field
 from typing import List, Dict, Any
 
+EVENTS_TO_SKIP = {
+    "mollee": ["Journey anni <3", "Call mak"],
+    "journey": ["Pay Rent", "Off Friday"]
+}
+
 @dataclass
 class GetEventsResult:
     sync_tokens: Dict[str, str]
@@ -36,9 +41,4 @@ def write_file(file_name: str, data: Dict[str, str], path="storage/"):
         json.dump(data, f)
 
 def skip_event(cal_name: str, event_summary: str):
-    EVENTS_TO_SKIP = {
-        "mollee": ["Journey anni <3"],
-        "journey": ["Pay Rent", "Off Friday"]
-    }
-
     return event_summary in EVENTS_TO_SKIP[cal_name]
