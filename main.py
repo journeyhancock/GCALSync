@@ -26,9 +26,9 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def journey(creds: Creds):
+def journey(creds: Creds, events: bool = True, tasks: bool = True):
     logger.info("-- Journey --")
-    # Build services 
+    # Build services
     logger.info("Building services")
     cal_service = build("calendar", "v3", credentials=creds.journey_creds)
     tasks_service = build("tasks", "v1", credentials=creds.journey_creds)
@@ -39,33 +39,35 @@ def journey(creds: Creds):
 
     # Wipe Sync To Calendar 
     if False:
-        confirm = input(f"Confirm clearing of Sync To Calendar by typing YES: ")
+        confirm = input(f"Confirm clearing of Journey Sync To Calendar by typing YES: ")
         if confirm == "YES":
             clear_sync_to_calendar("journey", cal_service, cal_ids.sync_to)
         return
     
     # Wipe TODO events
     if False:
-        confirm = input(f"Confirm clearing of TODO events in calendar {cal_ids.sync_to.name} by typing YES: ")
+        confirm = input(f"Confirm clearing of Journey TODO events in calendar {cal_ids.sync_to.name} by typing YES: ")
         if confirm == "YES":
             clear_todo_events(cal_service, cal_ids.sync_to)
         return
 
-    # Initialize Sync To Calendar or update it 
-    if read_file("journey_events") != {}:
-        logger.info("Syncing events")
-        sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
-    else:
-        logger.info("Initializing sync to")
-        init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
+    # Initialize Sync To Calendar or update it
+    if events:
+        if read_file("journey_events") != {}:
+            logger.info("Syncing events")
+            sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
+        else:
+            logger.info("Initializing sync to")
+            init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "journey")
 
     # Initialize task TODO events in Sync To Calendar or update it
-    if read_file("days_events") != {} and read_file("tasks_events") != {}:
-        logger.info("Syncing tasks")
-        sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
-    else:
-        logger.info("Initializing TODOs")
-        init_sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
+    if tasks:
+        if read_file("days_events") != {} and read_file("tasks_events") != {}:
+            logger.info("Syncing tasks")
+            sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
+        else:
+            logger.info("Initializing TODOs")
+            init_sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
 
     # Prune storage of old mappings
     if False:
@@ -84,7 +86,7 @@ def mollee(creds: Creds):
 
     # Wipe sync to 
     if False:
-        confirm = input(f"Confirm clearing of Sync To Calendar by typing YES: ")
+        confirm = input(f"Confirm clearing of Mollee Sync To Calendar by typing YES: ")
         if confirm == "YES":
             clear_sync_to_calendar("mollee", cal_service, cal_ids.sync_to)
         return

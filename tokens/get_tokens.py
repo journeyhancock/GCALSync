@@ -6,7 +6,8 @@ import stat
 
 from dataclasses import dataclass
 from datetime import datetime, timedelta, timezone
-from gcloud_storage import get_client, upload_file
+from gcloud_storage import download_file, get_client, upload_file
+from util import write_file
 from google.auth.credentials import Credentials as AuthCredentials
 from google.auth.exceptions import RefreshError
 from google.auth.transport.requests import Request
@@ -66,7 +67,25 @@ def needs_refresh(creds: Credentials) -> bool:
 
     return expiry - datetime.now(timezone.utc) < REFRESH_MARGIN
 
-def ensure_valid(creds: Credentials, name: str, client: storage.Client) -> Credentials | UserCredentials:
+def recover_from_bucket(name: str, dead_token: str, client: storage.Client) -> Credentials | None:
+    # Pick up credentials reauthorized on another machine.
+
+    remote = download_file(client, f"{name}_creds.json")
+
+    if not remote.get("refresh_token"):
+        return None
+
+    if remote["refresh_token"] == dead_token:
+        logger.info(f"Stored {name} credentials are the same dead token")
+        return None
+
+    logger.info(f"Found different {name} credentials in the bucket; trying those")
+    write_file(f"{name}_creds", remote, path="tokens/")
+
+    return Credentials.from_authorized_user_info(remote, SCOPES)
+
+def ensure_valid(creds: Credentials, name: str, client: storage.Client,
+                 recover: bool = True) -> Credentials | UserCredentials:
     if not creds.refresh_token:
         logger.warning(f"No refresh token stored for {name}; reauthorizing")
         return get_refresh_token(name, client)
@@ -78,7 +97,14 @@ def ensure_valid(creds: Credentials, name: str, client: storage.Client) -> Crede
     try:
         creds.refresh(Request())
     except RefreshError as e:
-        logger.warning(f"Refresh token invalid for {name} ({e}); reauthorizing")
+        logger.warning(f"Refresh token invalid for {name} ({e})")
+
+        if recover:
+            recovered = recover_from_bucket(name, creds.refresh_token, client)
+            if recovered:
+                return ensure_valid(recovered, name, client, recover=False)
+
+        logger.warning(f"Cannot recover {name} credentials; reauthorizing")
         return get_refresh_token(name, client)
 
     # Google can rotate the refresh token on refresh, so persist right away

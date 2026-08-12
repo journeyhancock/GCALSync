@@ -1,0 +1,35 @@
+[Unit]
+Description=GCALSync calendar merge daemon
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=pi
+WorkingDirectory=/home/rpi5/GCALSync
+ExecStart=/home/rpi5/GCALSync/.venv/bin/python daemon.py
+
+# Never block on an OAuth flow no browser can reach; exit and let the restart
+# below retry, which picks up a token reauthorized on another machine.
+Environment=HEADLESS=1
+Environment=LOG_LEVEL=INFO
+Environment=CALENDAR_INTERVAL=300
+Environment=TASKS_INTERVAL=3600
+
+# Bucket access is Application Default Credentials, not the user's OAuth token.
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/rpi5/GCALSync/tokens/service_account.json
+
+Restart=on-failure
+RestartSec=300
+
+# A cycle in flight is allowed to finish so state is not left half written.
+TimeoutStopSec=300
+
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/rpi5/GCALSync
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target
