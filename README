@@ -55,3 +55,8 @@ Setup:
   journalctl -u gcalsync -f
 
 Edit gcalsync.service first if your user or path is not pi/home/pi.
+
+To change an already registered service:
+sudo cp gcalsync.service /etc/systemd/system/
+sudo systemctl daemon-reload
+sudo systemctl restart gcalsync

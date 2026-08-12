@@ -21,7 +21,7 @@ from tokens.get_tokens import Creds, ReauthRequired, get_credentials
 CALENDAR_INTERVAL = int(os.getenv("CALENDAR_INTERVAL", "300"))
 
 # Tasks has no push API and changes rarely, so it gets the slow lane.
-TASKS_INTERVAL = int(os.getenv("TASKS_INTERVAL", "3600"))
+TASKS_INTERVAL = int(os.getenv("TASKS_INTERVAL", "300"))
 
 # How long to nap between checking whether either job is due.
 TICK = 5
