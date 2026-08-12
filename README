@@ -9,3 +9,5 @@ If syncing issues arise, edit the wipe if statements in main.py to be True. Run 
 I would recommend running the pruning every couple days just to make sure the mapping json files don't get oversized. 
 
 Also, sync tokens and event/tasks ids are useless without an oauth token. 
+
+Run python -m tokens.get_tokens --account <name> to login on a device that has the Google Accounts.

@@ -1,25 +1,47 @@
 import json
 import logging
+import os
 
 from google.cloud import storage
 from google.api_core.exceptions import NotFound
 from typing import Any, Dict
 from util import write_file, read_file
 
+PROJECT = "quiet-engine-471620-s7"
 BUCKET = "gcalsync-storage"
+
+# Local disk is the source of truth; the bucket is a backup that gets restored
+# only when a local file is missing. Downloading unconditionally is how a
+# freshly refreshed token got overwritten by a stale one.
+STATE_FILES = ("journey_events",
+               "mollee_events",
+               "days_events",
+               "tasks_events",
+               "journey_event_tokens",
+               "mollee_event_tokens",
+               "tasks_sync_time")
+
+CRED_FILES = ("journey_creds", "mollee_creds")
+
 logger = logging.getLogger(__name__)
 
-def download_file(client: storage.Client, file: str) -> Dict[str, str]:
+def get_client() -> storage.Client:
+    return storage.Client(project=PROJECT)
+
+def download_file(client: storage.Client, file: str) -> Dict[str, Any]:
     bucket = client.bucket(BUCKET)
     blob = bucket.blob(file)
 
-    try: 
+    try:
         data = blob.download_as_text()
         return json.loads(data)
     except NotFound:
         return {}
-    
-def upload_file(client: storage.Client, file: str, data: Dict[str, str]) -> None:
+    except json.JSONDecodeError:
+        logger.warning(f"Stored {file} is not valid JSON; ignoring it")
+        return {}
+
+def upload_file(client: storage.Client, file: str, data: Dict[str, Any]) -> None:
     bucket = client.bucket(BUCKET)
     blob = bucket.blob(file)
 
@@ -28,66 +50,54 @@ def upload_file(client: storage.Client, file: str, data: Dict[str, str]) -> None
         content_type="application/json"
     )
 
+def has_refresh_token(data: Dict[str, Any]) -> bool:
+    return bool(data.get("refresh_token"))
+
+def _state_is_usable(name: str, path: str) -> bool:
+    # An empty mapping written by a wipe is meaningful, so existence is the test.
+    return os.path.exists(f"{path}{name}.json")
+
+def _creds_are_usable(name: str, path: str) -> bool:
+    return has_refresh_token(read_file(name, path=path))
+
+def _restore(client: storage.Client, name: str, path: str, is_creds: bool) -> None:
+    if (_creds_are_usable if is_creds else _state_is_usable)(name, path):
+        logger.debug(f"Keeping local {name}")
+        return
+
+    remote = download_file(client, f"{name}.json")
+
+    if is_creds and not has_refresh_token(remote):
+        logger.warning(f"No usable stored credentials for {name} in the bucket")
+        return
+
+    write_file(name, remote, path=path)
+    logger.info(f"Restored {name} from the bucket")
+
+def _backup(client: storage.Client, name: str, path: str, is_creds: bool) -> None:
+    if not (_creds_are_usable if is_creds else _state_is_usable)(name, path):
+        # Uploading {} here would destroy the stored copy - the exact failure
+        # that used to wipe a refresh token and force a fresh login.
+        logger.warning(f"Local {name} is missing or invalid; skipping upload")
+        return
+
+    upload_file(client, f"{name}.json", read_file(name, path=path))
+    logger.info(f"Uploaded {name}")
+
 def update_local_files(client: storage.Client):
-    logging.info("Updating local files")
+    logger.info("Updating local files")
 
-    # mappings
-    write_file("journey_events", download_file(client, "journey_events.json"))
-    logging.info("Downloaded Journey event mapping")
+    for name in STATE_FILES:
+        _restore(client, name, "storage/", is_creds=False)
 
-    write_file("mollee_events", download_file(client, "mollee_events.json"))
-    logging.info("Downloaded Mollee event mapping")
-
-    write_file("days_events", download_file(client, "days_events.json"))
-    logging.info("Downloaded days events mapping")
-
-    write_file("tasks_events", download_file(client, "tasks_events.json"))
-    logging.info("Downloaded tasks events mapping")
-
-    # sync tokens
-    write_file("journey_event_tokens", download_file(client, "journey_event_tokens.json"))
-    logging.info("Downloaded Journey event tokens")
-
-    write_file("mollee_event_tokens", download_file(client, "mollee_event_tokens.json"))
-    logging.info("Downloaded Mollee event tokens")
-
-    write_file("tasks_sync_time", download_file(client, "tasks_sync_time.json"))
-    logging.info("Downloaded task sync time")
-
-    # credentials
-    write_file("journey_creds", download_file(client, "journey_creds.json"), path="tokens/")
-    logging.info("Downloaded Journey credentials")
-
-    write_file("mollee_creds", download_file(client, "mollee_creds.json"), path="tokens/")
-    logging.info("Downloaded Mollee credentials")
+    for name in CRED_FILES:
+        _restore(client, name, "tokens/", is_creds=True)
 
 def update_cloud_files(client: storage.Client):
-    # mappings
-    upload_file(client, "journey_events.json", read_file("journey_events"))
-    logging.info("Uploaded Journey event mapping")
+    logger.info("Updating cloud files")
 
-    upload_file(client, "mollee_events.json", read_file("mollee_events"))
-    logging.info("Uploaded Mollee event mapping")
+    for name in STATE_FILES:
+        _backup(client, name, "storage/", is_creds=False)
 
-    upload_file(client, "days_events.json", read_file("days_events"))
-    logging.info("Uploaded days events mapping")
-
-    upload_file(client, "tasks_events.json", read_file("tasks_events"))
-    logging.info("Uploaded tasks events mapping")
-
-    # sync tokens
-    upload_file(client, "journey_event_tokens.json", read_file("journey_event_tokens"))
-    logging.info("Uploaded Journey event tokens")
-
-    upload_file(client, "mollee_event_tokens.json", read_file("mollee_event_tokens"))
-    logging.info("Uploaded Mollee event tokens")
-
-    upload_file(client, "tasks_sync_time.json", read_file("tasks_sync_time"))
-    logging.info("Uploaded tasks sync time")
-
-    # credentials
-    upload_file(client, "journey_creds.json", read_file("journey_creds", path="tokens/"))
-    logging.info("Uploaded Journey credentials")
-
-    upload_file(client, "mollee_creds.json", read_file("mollee_creds", path="tokens/"))
-    logging.info("Uploaded Mollee credentials")
+    for name in CRED_FILES:
+        _backup(client, name, "tokens/", is_creds=True)

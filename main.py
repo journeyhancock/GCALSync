@@ -2,9 +2,8 @@ import logging
 import os
 
 from googleapiclient.discovery import build
-from google.cloud import storage
-from gcloud_storage import update_local_files, update_cloud_files
-from tokens.get_tokens import get_credentials, get_refresh_token
+from gcloud_storage import get_client, update_local_files, update_cloud_files
+from tokens.get_tokens import Creds, ReauthRequired, get_credentials
 from calendar_functions import (get_events, 
                                 clear_sync_to_calendar,
                                 clear_todo_events, 
@@ -18,10 +17,6 @@ from storage_functions import (prune_calendar,
                                prune_tasks)
 from util import read_file, write_file
 
-SCOPES = ["https://www.googleapis.com/auth/calendar",
-          "https://www.googleapis.com/auth/tasks.readonly",
-          "https://www.googleapis.com/auth/cloud-platform"]
-
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO")
 
 logging.basicConfig(
@@ -31,12 +26,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-# Fetch or create credentials if necessary
-client = storage.Client(project="quiet-engine-471620-s7")
-logger.info("Fetching credentials")
-creds = get_credentials(client=client)
-
-def journey():
+def journey(creds: Creds):
     logger.info("-- Journey --")
     # Build services 
     logger.info("Building services")
@@ -82,7 +72,7 @@ def journey():
         prune_calendar(cal_service, cal_ids.sync_to, "journey")
         prune_tasks(tasks_service)
 
-def mollee():
+def mollee(creds: Creds):
     logger.info("-- Mollee --")
     # Build services
     logger.info("Building services")
@@ -112,11 +102,22 @@ def mollee():
         prune_calendar(cal_service, cal_ids.sync_to, "mollee")
 
 def main():
+    client = get_client()
+
+    # Restore state before touching credentials, so a fresh host picks up the
+    # stored refresh token instead of kicking off an interactive login.
     update_local_files(client=client)
 
+    logger.info("Fetching credentials")
     try:
-        journey()
-        mollee()
+        creds = get_credentials(client=client)
+    except ReauthRequired as e:
+        logger.error(str(e))
+        raise SystemExit(1)
+
+    try:
+        journey(creds)
+        mollee(creds)
     finally:
         update_cloud_files(client=client)
 
