@@ -5,9 +5,9 @@ Wants=network-online.target
 
 [Service]
 Type=simple
-User=pi
-WorkingDirectory=/home/rpi5/GCALSync
-ExecStart=/home/rpi5/GCALSync/.venv/bin/python daemon.py
+User=journ
+WorkingDirectory=/home/journ/GCALSync
+ExecStart=/home/journ/GCALSync/.venv/bin/python daemon.py
 
 # Never block on an OAuth flow no browser can reach; exit and let the restart
 # below retry, which picks up a token reauthorized on another machine.
@@ -17,7 +17,7 @@ Environment=CALENDAR_INTERVAL=300
 Environment=TASKS_INTERVAL=3600
 
 # Bucket access is Application Default Credentials, not the user's OAuth token.
-Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/rpi5/GCALSync/tokens/service_account.json
+Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/journ/GCALSync/tokens/service_account.json
 
 Restart=on-failure
 RestartSec=300
@@ -28,7 +28,7 @@ TimeoutStopSec=300
 NoNewPrivileges=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/rpi5/GCALSync
+ReadWritePaths=/home/journ/GCALSync
 PrivateTmp=true
 
 [Install]
