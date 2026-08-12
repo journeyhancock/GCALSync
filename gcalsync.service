@@ -14,7 +14,7 @@ ExecStart=/home/journ/GCALSync/.venv/bin/python daemon.py
 Environment=HEADLESS=1
 Environment=LOG_LEVEL=INFO
 Environment=CALENDAR_INTERVAL=300
-Environment=TASKS_INTERVAL=3600
+Environment=TASKS_INTERVAL=300
 
 # Bucket access is Application Default Credentials, not the user's OAuth token.
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/journ/GCALSync/tokens/service_account.json
