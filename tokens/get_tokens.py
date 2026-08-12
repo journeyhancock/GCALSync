@@ -98,12 +98,21 @@ def get_refresh_token(name: str, client: storage.Client) -> Credentials | UserCr
     flow = InstalledAppFlow.from_client_secrets_file("tokens/client_secret.json", SCOPES)
 
     print(f"Please login to the Google Account for {name}")
-    creds = flow.run_local_server(
-        port=OAUTH_PORT,
-        open_browser=False,
-        prompt="consent",
-        access_type="offline"
-    )
+
+    try:
+        creds = flow.run_local_server(
+            port=OAUTH_PORT,
+            open_browser=False,
+            prompt="consent",
+            access_type="offline"
+        )
+    except OSError:
+        # If port in use, re-run with no specified port
+        creds = flow.run_local_server(
+            open_browser=False,
+            prompt="consent",
+            access_type="offline"
+        )
 
     save_creds(creds, name, client)
 
