@@ -14,7 +14,7 @@ import time
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
 import dashboard
-from gcloud_storage import get_client, update_local_files, update_cloud_files
+from gcloud_storage import get_client
 from main import journey, mollee
 from tokens.get_tokens import Creds, ReauthRequired, get_credentials
 
@@ -78,11 +78,10 @@ def run() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
+    # Only used for credential refresh/recovery (tokens/get_tokens.py) - state
+    # files are never synced here. Hand state to/from the bucket with
+    # sync_control.py's pause/resume instead of doing it on every cycle.
     client = get_client()
-
-    # Restore state once at startup. From here local disk is authoritative and
-    # the bucket is only written to.
-    update_local_files(client=client)
 
     # Bound to the LAN-facing interface only; if this fails to bind, the whole
     # daemon fails to start (and systemd restarts it) rather than running with
@@ -114,12 +113,8 @@ def run() -> int:
             results.append(run_cycle(label, creds))
             next_run[label] = time.monotonic() + JOBS[label][0]
 
-        update_cloud_files(client=client)
         dashboard.write_heartbeat(all(results), log_buffer.drain())
         shutdown.wait(TICK)
-
-    logger.info("Backing up state before exit")
-    update_cloud_files(client=client)
 
     return 0
 

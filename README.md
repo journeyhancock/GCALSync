@@ -41,9 +41,26 @@ Both jobs run on a single thread. Never run `daemon.py` and `main.py` at the sam
 
 ## State
 
-Local disk is the source of truth. The `gcalsync-storage` bucket is a backup that is only read back when a local file is missing, so a stale or empty bucket copy can never overwrite good local state. That means two hosts running against the same calendars will diverge - pick one.
+Local disk is the source of truth. `main.py` (a manual, single-shot run) downloads state from the `gcalsync-storage` bucket on start and uploads it on exit, so it always reconciles against whatever's in the bucket.
 
-Credentials are the exception: if a refresh token stops working, the daemon checks the bucket for a different one before giving up. So to fix a dead token, reauthorize on a machine with a browser (`python -m tokens.get_tokens --account NAME`), which uploads it, and the Pi picks it up on its next attempt.
+`daemon.py` is different: once running, it **never syncs state with the bucket** - it only reads/writes `storage/` locally. This is deliberate, the daemon polls every few minutes, and re-uploading the same state files every cycle burns through Google Cloud Storage's free operation quota for no benefit on a host that never runs alongside another one. The daemon still uses the bucket for one thing: credential refresh/recovery (see below), which is cheap and infrequent by comparison.
+
+Because the daemon doesn't sync, two hosts running against the same calendars at the same time will still diverge and race each other's mappings; pick one. If you want to do a manual/local run (e.g. `python main.py` for testing) while the Pi's daemon is also live, stop the daemon first or use `sync_control.py` (below).
+
+Credentials are the exception even for the daemon: if a refresh token stops working mid-run, it checks the bucket for a different one before giving up. So to fix a dead token, reauthorize on a machine with a browser (`python -m tokens.get_tokens --account NAME`), which uploads it, and the Pi picks it up on its next attempt.
+
+### Handing state between the Pi and a local machine
+
+Since the daemon no longer syncs automatically, use `sync_control.py` to move state through the bucket deliberately. Run it **on the Pi**, since it calls `systemctl`:
+
+```
+python sync_control.py pause    # uploads current Pi state to the bucket, stops gcalsync
+python sync_control.py resume   # downloads state from the bucket, starts gcalsync
+```
+
+Typical flow for local development: `pause` on the Pi, then `python main.py` (or your dev work) on your local machine as normal - it downloads on start and uploads on exit, same as always. When you're done, `resume` on the Pi to pull your changes back down and restart the service.
+
+`sync_control.py` shells out to `sudo systemctl {stop,start} gcalsync`, so whatever user runs it needs passwordless sudo for those two commands (or just enter your password when prompted).
 
 ## Headless hosts (Raspberry Pi)
 
