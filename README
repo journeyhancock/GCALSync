@@ -38,8 +38,8 @@ Bucket access uses Application Default Credentials, not the user's OAuth token. 
 
 Setup:
 
-  git clone <repo> /home/pi/GCALSync
-  cd /home/pi/GCALSync
+  git clone <repo> /home/user/GCALSync
+  cd /home/user/GCALSync
   python3 -m venv .venv
   .venv/bin/pip install -r requirements.txt
 
@@ -54,7 +54,7 @@ Setup:
 
   journalctl -u gcalsync -f
 
-Edit gcalsync.service first if your user or path is not pi/home/pi.
+Edit gcalsync.service first if your user or path is not /home/user.
 
 To change an already registered service:
 sudo cp gcalsync.service /etc/systemd/system/

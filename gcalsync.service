@@ -15,6 +15,7 @@ Environment=HEADLESS=1
 Environment=LOG_LEVEL=INFO
 Environment=CALENDAR_INTERVAL=300
 Environment=TASKS_INTERVAL=300
+Environment=DASHBOARD_PORT=2727
 
 # Bucket access is Application Default Credentials, not the user's OAuth token.
 Environment=GOOGLE_APPLICATION_CREDENTIALS=/home/journ/GCALSync/tokens/service_account.json

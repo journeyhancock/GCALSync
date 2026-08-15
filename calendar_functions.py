@@ -212,7 +212,9 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
     get_events_result: GetEventsResult = get_updated_events(service, sync_from, sync_to, name)
     sync_from_events = get_events_result.events
     logger.info(f"Found {len(sync_from_events)} events to sync")
-    if len(sync_from_events) == 0: return
+    if len(sync_from_events) == 0:
+        logger.info("No changes found")
+        return
 
     mapping = read_file(f"{name}_events")
     stored_sync_from_ids = set(mapping.keys())
@@ -442,7 +444,9 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
     get_tasks_result: GetTasksResult = get_updated_tasks(tasks_service)
     tasks = get_tasks_result.tasks
     logger.info(f"Found {len(tasks)} tasks to sync")
-    if len(tasks) == 0: return
+    if len(tasks) == 0:
+        logger.info("No changes found")
+        return
 
     days_events = read_file("days_events")
     stored_days = set(days_events.keys())

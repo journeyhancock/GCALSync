@@ -13,6 +13,7 @@ import time
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
+import dashboard
 from gcloud_storage import get_client, update_local_files, update_cloud_files
 from main import journey, mollee
 from tokens.get_tokens import Creds, ReauthRequired, get_credentials
@@ -25,6 +26,15 @@ TASKS_INTERVAL = int(os.getenv("TASKS_INTERVAL", "300"))
 
 # How long to nap between checking whether either job is due.
 TICK = 5
+
+DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "2727"))
+
+# A poll tick that's this overdue means the daemon is wedged or dead, not
+# just mid-cycle.
+STALE_AFTER = max(CALENDAR_INTERVAL, TASKS_INTERVAL) + 120
+
+log_buffer = dashboard.LogBuffer()
+logging.getLogger().addHandler(log_buffer)
 
 logger = logging.getLogger(__name__)
 shutdown = threading.Event()
@@ -41,7 +51,7 @@ JOBS = {
     "tasks": (TASKS_INTERVAL, tasks_cycle)
 }
 
-def run_cycle(label: str, creds: Creds) -> None:
+def run_cycle(label: str, creds: Creds) -> bool:
     _, cycle = JOBS[label]
 
     logger.info(f"Starting {label} cycle")
@@ -53,9 +63,10 @@ def run_cycle(label: str, creds: Creds) -> None:
         # One bad cycle must not take the daemon down. The sync functions
         # already persist partial progress before bailing out.
         logger.exception(f"{label} cycle failed; continuing")
-        return
+        return False
 
     logger.info(f"Finished {label} cycle in {time.monotonic() - started:.1f}s")
+    return True
 
 def stop(signum, _frame):
     # A cycle in flight is left to finish so state stays consistent; give
@@ -72,6 +83,12 @@ def run() -> int:
     # Restore state once at startup. From here local disk is authoritative and
     # the bucket is only written to.
     update_local_files(client=client)
+
+    # Bound to the LAN-facing interface only; if this fails to bind, the whole
+    # daemon fails to start (and systemd restarts it) rather than running with
+    # a dashboard silently absent - an unreachable dashboard is meant to read
+    # as "service down", so the two must fail together.
+    dashboard.start(dashboard.get_wlan0_ip(), DASHBOARD_PORT, STALE_AFTER)
 
     logger.info(f"Polling calendars every {CALENDAR_INTERVAL}s, tasks every {TASKS_INTERVAL}s")
     next_run = {label: time.monotonic() for label in JOBS}
@@ -92,11 +109,13 @@ def run() -> int:
             logger.error(str(e))
             return 1
 
+        results = []
         for label in due:
-            run_cycle(label, creds)
+            results.append(run_cycle(label, creds))
             next_run[label] = time.monotonic() + JOBS[label][0]
 
         update_cloud_files(client=client)
+        dashboard.write_heartbeat(all(results), log_buffer.drain())
         shutdown.wait(TICK)
 
     logger.info("Backing up state before exit")
