@@ -39,15 +39,18 @@ logging.getLogger().addHandler(log_buffer)
 logger = logging.getLogger(__name__)
 shutdown = threading.Event()
 
-def calendar_cycle(creds: Creds):
+def journey_calendar_cycle(creds: Creds):
     journey(creds, events=True, tasks=False)
+
+def mollee_calendar_cycle(creds: Creds):
     mollee(creds)
 
 def tasks_cycle(creds: Creds):
     journey(creds, events=False, tasks=True)
 
 JOBS = {
-    "calendar": (CALENDAR_INTERVAL, calendar_cycle),
+    "journey_calendar": (CALENDAR_INTERVAL, journey_calendar_cycle),
+    "mollee_calendar": (CALENDAR_INTERVAL, mollee_calendar_cycle),
     "tasks": (TASKS_INTERVAL, tasks_cycle)
 }
 
@@ -108,12 +111,11 @@ def run() -> int:
             logger.error(str(e))
             return 1
 
-        results = []
         for label in due:
-            results.append(run_cycle(label, creds))
+            result = run_cycle(label, creds)
             next_run[label] = time.monotonic() + JOBS[label][0]
+            dashboard.write_heartbeat(label, result, log_buffer.drain())
 
-        dashboard.write_heartbeat(all(results), log_buffer.drain())
         shutdown.wait(TICK)
 
     return 0

@@ -20,6 +20,11 @@ from util import read_file, write_file
 
 logger = logging.getLogger(__name__)
 
+COLUMNS = [
+    ("journey_calendar", "Journey Calendar"),
+    ("mollee_calendar", "Mollee Calendar"),
+    ("tasks", "Tasks"),
+]
 HEARTBEAT_FILE = "last_run"
 
 
@@ -43,12 +48,14 @@ class LogBuffer(logging.Handler):
         return "\n".join(lines)
 
 
-def write_heartbeat(ok: bool, log_text: str) -> None:
-    write_file(HEARTBEAT_FILE, {
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+def write_heartbeat(label: str, ok: bool, log_text: str) -> None:
+    current_heartbeat = read_file(HEARTBEAT_FILE)
+    current_heartbeat[label] = {
+        "timestamp": datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M:%S"),
         "status": "ok" if ok else "error",
         "log": log_text,
-    })
+    }
+    write_file(HEARTBEAT_FILE, current_heartbeat)
 
 
 def get_wlan0_ip() -> str:
@@ -60,6 +67,14 @@ def get_wlan0_ip() -> str:
     if not match:
         raise RuntimeError("wlan0 has no IPv4 address")
     return match.group(1)
+
+
+COLUMN = """<section class="column">
+<h1>{column} &mdash; last run {timestamp}</h1>
+<div class="status {status_class}">{status_text}</div>
+<pre>{log}</pre>
+</section>
+"""
 
 
 PAGE = """<!doctype html>
@@ -78,12 +93,13 @@ PAGE = """<!doctype html>
   .stale {{ color: #ff9800; }}
   pre {{ white-space: pre-wrap; word-break: break-word; margin-top: 1.5rem;
         border-top: 1px solid #333; padding-top: 1rem; }}
+  .columns {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 2rem; }}
+  .column {{ min-width: 0; }}
 </style>
 </head>
 <body>
-<h1>GCALSync &mdash; last run {timestamp}</h1>
-<div class="status {status_class}">{status_text}</div>
-<pre>{log}</pre>
+<div class="columns">
+{columns}</div>
 </body>
 </html>
 """
@@ -91,30 +107,42 @@ PAGE = """<!doctype html>
 
 def render_page(stale_after: float) -> str:
     data = read_file(HEARTBEAT_FILE)
+    formatted_columns = []
 
-    if not data:
-        return PAGE.format(timestamp="never", status_class="stale",
-                            status_text="NO RUNS YET", log="")
+    for job_key, name in COLUMNS:
+        entry = data.get(job_key)
 
-    timestamp = data.get("timestamp", "unknown")
-    age = None
-    try:
-        age = (datetime.now(timezone.utc) - datetime.fromisoformat(timestamp)).total_seconds()
-    except ValueError:
-        pass
+        if not entry:
+            formatted_columns.append(COLUMN.format(
+                column=name, timestamp="never", status_class="stale",
+                status_text="NO RUNS YET", log=""))
+            continue
 
-    if age is not None and age > stale_after:
-        status_class, status_text = "stale", f"STALE — no run in {int(age)}s"
-    elif data.get("status") == "ok":
-        status_class, status_text = "ok", "OK"
-    else:
-        status_class, status_text = "error", "ERROR"
+        timestamp = entry.get("timestamp", "unknown")
+        age = None
+        try:
+            # Stored as a naive UTC timestamp (no offset), so it has to be
+            # marked aware again before it can be diffed against now().
+            parsed = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
+            age = (datetime.now(timezone.utc) - parsed).total_seconds()
+        except ValueError:
+            pass
 
-    return PAGE.format(
-        timestamp=html.escape(timestamp),
-        status_class=status_class,
-        status_text=html.escape(status_text),
-        log=html.escape(data.get("log", "")))
+        if age is not None and age > stale_after:
+            status_class, status_text = "stale", f"STALE: no run in {int(age)}s"
+        elif entry.get("status") == "ok":
+            status_class, status_text = "ok", "OK"
+        else:
+            status_class, status_text = "error", "ERROR"
+
+        formatted_columns.append(COLUMN.format(
+            column=name,
+            timestamp=html.escape(timestamp),
+            status_class=status_class,
+            status_text=html.escape(status_text),
+            log=html.escape(entry.get("log", ""))))
+
+    return PAGE.format(columns="".join(formatted_columns))
 
 
 def make_handler(stale_after: float):
