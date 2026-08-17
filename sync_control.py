@@ -1,16 +1,4 @@
-"""Hand state between the Pi and a local dev machine.
-
-daemon.py never touches the bucket for state - only for credential
-refresh/recovery. Use this to move state through it deliberately:
-
-  pause   push local state to the bucket and stop the systemd service
-          (run this on the Pi before syncing/testing from another machine)
-  resume  pull state back down from the bucket and start the service
-          (run this on the Pi to hand control back to it)
-
-main.py already downloads on start and uploads on exit, so a normal
-"python main.py" run on your dev machine is the other half of the handoff.
-"""
+# Passes state between Pi and local development
 
 import argparse
 import logging
@@ -27,7 +15,8 @@ logger = logging.getLogger(__name__)
 def systemctl(action: str) -> None:
     subprocess.run(["sudo", "systemctl", action, SERVICE], check=True)
 
-
+# Push local state to the bucket and stop the systemd service
+# Eun this on the Pi before syncing/testing from another machine
 def pause() -> None:
     client = get_client()
 
@@ -37,7 +26,8 @@ def pause() -> None:
     logger.info(f"Stopping {SERVICE}")
     systemctl("stop")
 
-
+# Pull state back down from the bucket and start the service
+# Run this on the Pi to hand control back to it
 def resume() -> None:
     client = get_client()
 

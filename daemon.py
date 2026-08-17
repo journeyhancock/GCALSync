@@ -1,9 +1,6 @@
-"""Long-lived sync loop for headless hosts.
-
-Everything runs on one thread on purpose. A calendar sync and a task sync can
-never overlap, so they cannot race each other's mapping files or double-write
-the Sync To calendar - which a separate cron process alongside this one would.
-"""
+# Long-lived sync for headless hosts
+# Everything runs on one thread on purpose. 
+# A calendar sync and a task sync can never overlap, so they cannot race each other
 
 import logging
 import os
@@ -18,19 +15,15 @@ from gcloud_storage import get_client
 from main import journey, mollee
 from tokens.get_tokens import Creds, ReauthRequired, get_credentials
 
-# Sync tokens keep each poll cheap, so a short interval costs very little.
+# Set default polling intervals
 CALENDAR_INTERVAL = int(os.getenv("CALENDAR_INTERVAL", "300"))
-
-# Tasks has no push API and changes rarely, so it gets the slow lane.
 TASKS_INTERVAL = int(os.getenv("TASKS_INTERVAL", "300"))
 
-# How long to nap between checking whether either job is due.
-TICK = 5
+TICK = 5 # How long to nap between checking whether either job is due.
 
 DASHBOARD_PORT = int(os.getenv("DASHBOARD_PORT", "2727"))
 
-# A poll tick that's this overdue means the daemon is wedged or dead, not
-# just mid-cycle.
+# Set how long a poll tick being overdue mean the daemon is wedged or dead
 STALE_AFTER = max(CALENDAR_INTERVAL, TASKS_INTERVAL) + 120
 
 log_buffer = dashboard.LogBuffer()
@@ -63,8 +56,7 @@ def run_cycle(label: str, creds: Creds) -> bool:
     try:
         cycle(creds)
     except Exception:
-        # One bad cycle must not take the daemon down. The sync functions
-        # already persist partial progress before bailing out.
+        # Prevent one bad cycle from terminating the demon
         logger.exception(f"{label} cycle failed; continuing")
         return False
 
@@ -72,8 +64,7 @@ def run_cycle(label: str, creds: Creds) -> bool:
     return True
 
 def stop(signum, _frame):
-    # A cycle in flight is left to finish so state stays consistent; give
-    # systemd a generous TimeoutStopSec.
+    # A cycle in flight is left to finish so state stays consistent
     logger.info(f"Received signal {signum}; stopping after the current cycle")
     shutdown.set()
 
@@ -81,15 +72,12 @@ def run() -> int:
     signal.signal(signal.SIGTERM, stop)
     signal.signal(signal.SIGINT, stop)
 
-    # Only used for credential refresh/recovery (tokens/get_tokens.py) - state
-    # files are never synced here. Hand state to/from the bucket with
-    # sync_control.py's pause/resume instead of doing it on every cycle.
+    # Only used for credential refresh/recover, not syncing state files
     client = get_client()
 
-    # Bound to the LAN-facing interface only; if this fails to bind, the whole
-    # daemon fails to start (and systemd restarts it) rather than running with
-    # a dashboard silently absent - an unreachable dashboard is meant to read
-    # as "service down", so the two must fail together.
+    # Bound to the LAN-facing interface only
+    # If this fails to bind, the whole daemon fails to start
+    # An unreachable dashboard is meant to read as service down
     dashboard.start(dashboard.get_wlan0_ip(), DASHBOARD_PORT, STALE_AFTER)
 
     logger.info(f"Polling calendars every {CALENDAR_INTERVAL}s, tasks every {TASKS_INTERVAL}s")

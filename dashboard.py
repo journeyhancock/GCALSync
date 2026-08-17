@@ -1,11 +1,6 @@
-"""In-process web dashboard.
-
-Renders the log of the most recent poll cycle as a fake terminal, plus a
-staleness check so a wedged or dead daemon shows as down instead of quietly
-serving a stale "OK". Runs in the same process/service as the sync loop on
-purpose - a separate watchdog service was considered and skipped, so an
-unreachable dashboard doubles as the down signal.
-"""
+# Renders the log of the most recent run of each job cycle
+# Includes a staleness check so a wedged or dead daemon shows as down
+# Runs in the same service as the sync loop  
 
 import html
 import logging

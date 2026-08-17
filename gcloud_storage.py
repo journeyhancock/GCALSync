@@ -10,9 +10,7 @@ from util import write_file, read_file
 PROJECT = "quiet-engine-471620-s7"
 BUCKET = "gcalsync-storage"
 
-# Local disk is the source of truth; the bucket is a backup that gets restored
-# only when a local file is missing. Downloading unconditionally is how a
-# freshly refreshed token got overwritten by a stale one.
+# Local disk is the source of truth
 STATE_FILES = ("journey_events",
                "mollee_events",
                "days_events",
@@ -76,8 +74,6 @@ def _restore(client: storage.Client, name: str, path: str, is_creds: bool) -> No
 
 def _backup(client: storage.Client, name: str, path: str, is_creds: bool) -> None:
     if not (_creds_are_usable if is_creds else _state_is_usable)(name, path):
-        # Uploading {} here would destroy the stored copy - the exact failure
-        # that used to wipe a refresh token and force a fresh login.
         logger.warning(f"Local {name} is missing or invalid; skipping upload")
         return
 
