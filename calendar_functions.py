@@ -100,8 +100,8 @@ def reinit_expired_calendar_sync_token(service, cal: Calendar, sync_to: Calendar
                 "description": event.get("description", "")
             }
 
-            if skip_event(cal.name, new_event["summary"]): 
-                logging.log
+            if skip_event(name, event["summary"]): 
+                logging.info(f"[{i + 1}/{len(events)}] Skipping {event["summary"]}")
                 continue
 
             created_event = service.events().insert(
