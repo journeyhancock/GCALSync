@@ -7,6 +7,9 @@ import os
 import signal
 import threading
 import time
+from collections.abc import Callable
+from datetime import datetime, timedelta
+from util import write_file
 
 os.chdir(os.path.dirname(os.path.abspath(__file__)))
 
@@ -41,10 +44,22 @@ def mollee_calendar_cycle(creds: Creds):
 def tasks_cycle(creds: Creds):
     journey(creds, events=False, tasks=True)
 
-JOBS = {
+def prune_cycle(creds: Creds):
+    journey(creds, events=False, tasks=False, prune=True)
+    mollee(creds, events=False, prune=True)
+
+def seconds_until_midnight() -> float:
+    now = datetime.now()
+    midnight = (now + timedelta(days=1)).replace(hour=0, minute=0, second=0, microsecond=0)
+    return (midnight - now).total_seconds()
+
+# Schedule is either an interval in seconds or a callable returning seconds until the next run.
+Schedule = float | Callable[[], float]
+JOBS: dict[str, tuple[Schedule, Callable[[Creds], None]]] = {
     "journey_calendar": (CALENDAR_INTERVAL, journey_calendar_cycle),
     "mollee_calendar": (CALENDAR_INTERVAL, mollee_calendar_cycle),
-    "tasks": (TASKS_INTERVAL, tasks_cycle)
+    "tasks": (TASKS_INTERVAL, tasks_cycle),
+    "prune": (seconds_until_midnight, prune_cycle)
 }
 
 def run_cycle(label: str, creds: Creds) -> bool:
@@ -82,6 +97,11 @@ def run() -> int:
 
     logger.info(f"Polling calendars every {CALENDAR_INTERVAL}s, tasks every {TASKS_INTERVAL}s")
     next_run = {label: time.monotonic() for label in JOBS}
+    next_run["prune"] = time.monotonic() + seconds_until_midnight() - 600 # 10 minutes before midnight
+
+    # Seed prune date with the day before to prevent deleting any active mappings
+    yesterday = datetime.today() - timedelta(days=1)
+    write_file("prune_state", {"prune": str(yesterday.isoformat())})
 
     while not shutdown.is_set():
         now = time.monotonic()
@@ -101,8 +121,12 @@ def run() -> int:
 
         for label in due:
             result = run_cycle(label, creds)
-            next_run[label] = time.monotonic() + JOBS[label][0]
-            dashboard.write_heartbeat(label, result, log_buffer.drain())
+            schedule = JOBS[label][0]
+            if callable(schedule): 
+                next_run[label] = time.monotonic() + schedule()
+            else:
+                next_run[label] = time.monotonic() + schedule
+                dashboard.write_heartbeat(label, result, log_buffer.drain())
 
         shutdown.wait(TICK)
 

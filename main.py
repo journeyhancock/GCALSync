@@ -26,7 +26,7 @@ logging.basicConfig(
 
 logger = logging.getLogger(__name__)
 
-def journey(creds: Creds, events: bool = True, tasks: bool = True):
+def journey(creds: Creds, events: bool = True, tasks: bool = True, prune: bool = False):
     logger.info("-- Journey --")
     # Build services
     logger.info("Building services")
@@ -70,11 +70,11 @@ def journey(creds: Creds, events: bool = True, tasks: bool = True):
             init_sync_tasks(cal_service, tasks_service, cal_ids.sync_to)
 
     # Prune storage of old mappings
-    if False:
+    if prune:
         prune_calendar(cal_service, cal_ids.sync_to, "journey")
         prune_tasks(tasks_service)
 
-def mollee(creds: Creds):
+def mollee(creds: Creds, events: bool = True, prune: bool = False):
     logger.info("-- Mollee --")
     # Build services
     logger.info("Building services")
@@ -91,16 +91,17 @@ def mollee(creds: Creds):
             clear_sync_to_calendar("mollee", cal_service, cal_ids.sync_to)
         return
 
-    # Initialize sync to calendar or update it 
-    if read_file("mollee_events") != {}:
-        logger.info("Syncing events")
-        sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
-    else:
-        logger.info("Initializing sync to")
-        init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
+    if events:
+        # Initialize sync to calendar or update it 
+        if read_file("mollee_events") != {}:
+            logger.info("Syncing events")
+            sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
+        else:
+            logger.info("Initializing sync to")
+            init_sync_events(cal_service, cal_ids.sync_from, cal_ids.sync_to, "mollee")
 
     # Prune storage of old mappings
-    if False:
+    if prune:
         prune_calendar(cal_service, cal_ids.sync_to, "mollee")
 
 def main():
