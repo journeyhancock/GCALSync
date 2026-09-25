@@ -34,7 +34,7 @@ Both jobs run on a single thread. Never run `daemon.py` and `main.py` at the sam
 
 `daemon.py` also starts a small in-process web dashboard (see `dashboard.py`) so you can check the daemon's health without SSHing in and grepping logs.
 
-- Listens on the host's `wlan0` IP (Linux only - it shells out to `ip addr show wlan0`), on port `DASHBOARD_PORT` (default `2727`).
+- Listens on all host interfaces, on port `DASHBOARD_PORT` (default `2727`).
 - Shows the status (`OK` / `ERROR` / `STALE`) and log output of the most recent poll cycle, refreshing every 30s.
 - If the dashboard fails to bind, the whole daemon fails to start and systemd restarts it, rather than running silently without a dashboard - an unreachable dashboard is meant to read as "service down".
 - If you're running `daemon.py` somewhere without a `wlan0` interface (e.g. not a Raspberry Pi), you'll need to change how the bind address is resolved in `daemon.py`/`dashboard.py`.

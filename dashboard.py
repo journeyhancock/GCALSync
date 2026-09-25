@@ -52,18 +52,6 @@ def write_heartbeat(label: str, ok: bool, log_text: str) -> None:
     }
     write_file(HEARTBEAT_FILE, current_heartbeat)
 
-
-def get_wlan0_ip() -> str:
-    result = subprocess.run(
-        ["ip", "-4", "-o", "addr", "show", "wlan0"],
-        capture_output=True, text=True, check=True
-    )
-    match = re.search(r"inet (\d+\.\d+\.\d+\.\d+)", result.stdout)
-    if not match:
-        raise RuntimeError("wlan0 has no IPv4 address")
-    return match.group(1)
-
-
 COLUMN = """<section class="column">
 <h1>{column} &mdash; last run {timestamp}</h1>
 <div class="status {status_class}">{status_text}</div>

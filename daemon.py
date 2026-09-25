@@ -93,7 +93,7 @@ def run() -> int:
     # Bound to the LAN-facing interface only
     # If this fails to bind, the whole daemon fails to start
     # An unreachable dashboard is meant to read as service down
-    dashboard.start(dashboard.get_wlan0_ip(), DASHBOARD_PORT, STALE_AFTER)
+    dashboard.start("0.0.0.0", DASHBOARD_PORT, STALE_AFTER)
 
     logger.info(f"Polling calendars every {CALENDAR_INTERVAL}s, tasks every {TASKS_INTERVAL}s")
     next_run = {label: time.monotonic() for label in JOBS}
