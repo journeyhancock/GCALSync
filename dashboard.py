@@ -9,6 +9,7 @@ import subprocess
 import threading
 
 from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 from util import read_file, write_file
@@ -21,7 +22,7 @@ COLUMNS = [
     ("tasks", "Tasks"),
 ]
 HEARTBEAT_FILE = "last_run"
-
+PHX = ZoneInfo("America/Phoenix")
 
 class LogBuffer(logging.Handler):
     """Captures formatted log lines for the current poll cycle only."""
@@ -102,12 +103,14 @@ def render_page(stale_after: float) -> str:
             continue
 
         timestamp = entry.get("timestamp", "unknown")
+        phoenix_timestamp = "unknown"
         age = None
         try:
             # Stored as a naive UTC timestamp (no offset), so it has to be
             # marked aware again before it can be diffed against now().
             parsed = datetime.fromisoformat(timestamp).replace(tzinfo=timezone.utc)
             age = (datetime.now(timezone.utc) - parsed).total_seconds()
+            phoenix_timestamp = parsed.astimezone(PHX).strftime("%H:%M:%S - %m/%d/%y")
         except ValueError:
             pass
 
@@ -120,7 +123,7 @@ def render_page(stale_after: float) -> str:
 
         formatted_columns.append(COLUMN.format(
             column=name,
-            timestamp=html.escape(timestamp),
+            timestamp=html.escape(phoenix_timestamp),
             status_class=status_class,
             status_text=html.escape(status_text),
             log=html.escape(entry.get("log", ""))))

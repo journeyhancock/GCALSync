@@ -95,7 +95,7 @@ Once it's running, the dashboard is reachable at `http://<pi's wlan0 ip>:2727` (
 ### To change an already registered service
 
 ```
-sudo cp gcalsync.service /etc/systemd/system/
+sudo cp gcalsync.service /etc/systemd/system/ # If any changes made to service
 sudo systemctl daemon-reload
 sudo systemctl restart gcalsync
 ```
