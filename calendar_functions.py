@@ -14,6 +14,10 @@ from zoneinfo import ZoneInfo
 PHX = ZoneInfo("America/Phoenix")
 logger = logging.getLogger(__name__)
 
+# Marks a log line as an actual change to the Sync To calendar so the dashboard
+# can surface the most recent one.
+CHANGE = {"change": True}
+
 def extract_ids(events) -> Set[str]:
     ids: Set[str] = set()
     for event in events: ids.add(event["id"]) 
@@ -42,6 +46,13 @@ def is_future_event(event):
         datetime.now(tz=PHX).date(), 
         time.min, 
         tzinfo=PHX)
+
+def patchable_time(t):
+    # Patch merges nested objects, so explicitly null the unused fields to allow
+    # switching between all day ("date") and timed ("dateTime") events
+    if "dateTime" in t:
+        return {"date": None, "dateTime": t["dateTime"], "timeZone": t.get("timeZone")}
+    return {"date": t.get("date"), "dateTime": None, "timeZone": None}
 
 def get_events(service, calendars: Calendar | List[Calendar], name: str) -> GetEventsResult:
     if not isinstance(calendars, list): calendars = [calendars]
@@ -218,6 +229,7 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
 
     mapping = read_file(f"{name}_events")
     stored_sync_from_ids = set(mapping.keys())
+    update_failed = False
 
     try:
         for i, event in enumerate(sync_from_events):
@@ -226,12 +238,12 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                 sync_to_event_id = mapping[event_id]
 
                 if event["status"] == "cancelled":
-                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event")
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Deleted - Deleting Sync To Event", extra=CHANGE)
                     
                     delete_event(service, sync_to, mapping[event_id])
                     if event_id in mapping: mapping.pop(event_id)
                 else:
-                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event")
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Edited - Updating Sync To Event", extra=CHANGE)
 
                     start = event.get("start")
                     if start is None: 
@@ -246,8 +258,8 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                     
                     updated_info = {
                         "summary": event["summary"],
-                        "start": start,
-                        "end": end,
+                        "start": patchable_time(start),
+                        "end": patchable_time(end),
                         "description": event.get("description", "")
                     }
 
@@ -258,11 +270,11 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
                             body=updated_info
                         ).execute()
                     except HttpError as http_error:
-                        if http_error.status_code == 400:
-                            logging.warning(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Failed to Update Sync To Event {http_error}")
+                        logging.warning(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Failed to Update Sync To Event {http_error}")
+                        update_failed = True
             else:
                 if event["status"] != "cancelled":
-                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event")
+                    logger.info(f"[{i + 1}/{len(sync_from_events)}] {event["summary"]}: Sync From Event Added - Creating Sync To Event", extra=CHANGE)
 
                     new_event = {
                         "summary": event["summary"],
@@ -282,6 +294,10 @@ def sync_events(service, sync_from: List[Calendar], sync_to: Calendar, name: str
 
         logger.info("Finished syncing events")
         write_file(f"{name}_events", mapping)
+
+        if update_failed:
+            logging.warning("Some events failed to update - not updating sync tokens so they are retried")
+            return
 
         sync_tokens = get_events_result.sync_tokens
         write_file(f"{name}_event_tokens", sync_tokens)
@@ -461,7 +477,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                 event_id = days_events[day]
 
                 if task.get("deleted"):
-                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Deleted - Removing from TODO event")
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Deleted - Removing from TODO event", extra=CHANGE)
 
                     event = get_event(cal_service, event_id, sync_to)
                     remove_task(cal_service, sync_to, event, task)
@@ -469,7 +485,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                 else:
                     task_id = task["id"]
                     if task_id in stored_tasks:
-                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in existing TODO event")
+                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in existing TODO event", extra=CHANGE)
 
                         old_event_id = tasks_events[task_id]
                         old_event = cal_service.events().get(
@@ -478,7 +494,7 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
                         ).execute()
                         remove_task(cal_service, sync_to, old_event, task)
                     else:
-                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event")
+                        logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in existing TODO event", extra=CHANGE)
 
                     event = get_event(cal_service, event_id, sync_to)
                     todo_list = event.get("description", "")
@@ -495,13 +511,13 @@ def sync_tasks(cal_service, tasks_service, sync_to: Calendar) -> None:
             else:
                 task_id = task["id"]
                 if task_id in stored_tasks:
-                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in new TODO event")
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Updated - Placing in new TODO event", extra=CHANGE)
 
                     old_event_id = tasks_events[task["id"]]
                     old_event = get_event(cal_service, old_event_id, sync_to)
                     remove_task(cal_service, sync_to, old_event, task)
                 else:
-                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in new TODO event")
+                    logger.info(f"[{i + 1}/{len(tasks)}] {task["title"]}: Task Created - Placing in new TODO event", extra=CHANGE)
                     
                 new_event = {
                     "summary": "TODO",

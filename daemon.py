@@ -121,12 +121,15 @@ def run() -> int:
 
         for label in due:
             result = run_cycle(label, creds)
+            # Drained for every job, even ones without a column (prune), so
+            # their logs don't spill into the next job's column
+            log_text, changes = log_buffer.drain()
             schedule = JOBS[label][0]
-            if callable(schedule): 
+            if callable(schedule):
                 next_run[label] = time.monotonic() + schedule()
             else:
                 next_run[label] = time.monotonic() + schedule
-                dashboard.write_heartbeat(label, result, log_buffer.drain())
+                dashboard.write_heartbeat(label, result, log_text, changes)
 
         shutdown.wait(TICK)
 
