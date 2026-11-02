@@ -10,7 +10,7 @@ class JourneyConfig:
 
 @dataclass(frozen=True)
 class MolleeConfig:
-    sync_from: tuple[str, ...] = ("ca", "wclax eboard 26-27", "classes", "mjkahan3@gmail.com", "mjkahan@asu.edu")
+    sync_from: tuple[str, ...] = ("ca", "wclax eboard 26-27", "wclax 26-27", "classes", "mjkahan3@gmail.com", "mjkahan@asu.edu")
     sync_to: str = "mollee :)"
 
 def get_cal_ids(service, name: str) -> CalIds:
